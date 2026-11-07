@@ -44,7 +44,7 @@ Scope: Foundry project in `contracts/` with `forge-std` and OpenZeppelin 5.x at 
 
 Acceptance:
 
-* `forge build` succeeds; OpenZeppelin pinned to an exact tag, no other libraries.
+* `forge build` succeeds; OpenZeppelin pinned to the latest stable 5.x tag that has a published audit report, no other libraries. The chosen tag and its audit are recorded in `docs/ai/log.md`.
 * `CANCEL_WINDOW == 2 hours`, `TTL == 7 days`, `nextId == 1`.
 * Errors and events match §2.4 and §2.7 exactly.
 * `getEscrow` returns stored fields plus `cancelDeadline` and `expiresAt`; unknown id reverts with `EscrowNotFound(id)`.
@@ -101,9 +101,9 @@ Spec: §3.1, §3.3, §3.4 · Depends on: T-05 · Status: [ ]
 
 Acceptance:
 
-* NestJS app boots; config validated for `RPC_URL`, `CONTRACT_ADDRESS`, `START_BLOCK`, `CONFIRMATIONS`, `BATCH_SIZE`, `POLL_INTERVAL_MS`, lag threshold, database URL.
+* NestJS app boots; config validated for `RPC_URL`, `CONTRACT_ADDRESS`, `START_BLOCK`, `CONFIRMATIONS`, `BATCH_SIZE`, `POLL_INTERVAL_MS`, `HEALTH_MAX_EXTRA_LAG_BLOCKS` (default `10`), database URL.
 * Migration creates `escrows` and `indexer_state` as in §3.4, with indexes and lowercase addresses.
-* RPC client and Postgres driver approved by the developer before install.
+* Dependencies: `viem` as the RPC client and `pg` as the Postgres driver. No ORM.
 
 ### T-07 Ingestion and projection
 
@@ -130,7 +130,9 @@ Acceptance:
 * Derived fields and `effectiveStatus` as a pure function, tested at `D - 1`, `D`, `E - 1`, `E`.
 * `GET /escrows/:id` matches §4.3; `404` unknown, `400` invalid.
 * `GET /escrows` filters, `PendingExpired`, id desc order, `limit` 20/100, cursor, `400` on bad input.
-* `GET /health` returns `ok` or `degraded` with lag fields.
+* `status=Pending` returns only escrows whose effective status is `Pending` (it excludes `PendingExpired`).
+* An invalid `cursor` returns `400`.
+* `GET /health` returns `ok` or `degraded` with lag fields; `degraded` when the RPC is unreachable or `lagBlocks > CONFIRMATIONS + HEALTH_MAX_EXTRA_LAG_BLOCKS`.
 
 ---
 
@@ -148,11 +150,18 @@ Acceptance:
 
 ---
 
+## Resolved decisions
+
+Answered by the developer on 2026-11-07 and reconciled into `docs/SPEC.md` (§2.6, §3.1, §4.3).
+
+* T-01: latest stable OpenZeppelin 5.x release tag with a published audit.
+* T-05: the deploy script is in scope.
+* T-06: `viem` for RPC, `pg` for Postgres, no ORM.
+* T-08: `status=Pending` excludes `PendingExpired`.
+* T-08: an invalid `cursor` returns `400`.
+* T-08: `degraded` when `lagBlocks > CONFIRMATIONS + HEALTH_MAX_EXTRA_LAG_BLOCKS`, default `10`.
+* T-09: Docker Compose and the e2e script are in scope through the CLAUDE.md layout, which applies to the whole project.
+
 ## Open questions
 
-* T-01: exact OpenZeppelin release tag to pin (proposal: latest 5.x).
-* T-06: which RPC client (viem, ethers) and Postgres driver or ORM.
-* T-08: does `status=Pending` exclude escrows whose effective status is `PendingExpired`?
-* T-08: should an invalid `cursor` return `400`?
-* T-08: name and default of the lag threshold variable.
-* T-09: Docker Compose and the e2e script come from the CLAUDE.md layout, not the spec; confirm their scope.
+None.

@@ -84,6 +84,7 @@ Note: the required event is named `EscrowExpired`, so the time errors use differ
 * `nonReentrant` on every state changing function. `createEscrow` must transfer before writing state because of the balance check, so the guard is required there and kept everywhere as defense in depth.
 * No owner, no pause, no upgradeability and no rescue function. Only the parties in the table above can move funds.
 * Tokens sent directly to the contract are not attributed to any escrow and remain locked. A rescue function would contradict the rule that nobody else can move funds.
+* OpenZeppelin is pinned to the latest stable 5.x release tag that has a published audit report.
 * Security primitives come from OpenZeppelin 5.x and are never reimplemented: `SafeERC20` for transfers and `ReentrancyGuard` for reentrancy protection. Only the escrow logic itself is custom code.
 * Fixed pragma (`0.8.24`)
 
@@ -132,6 +133,7 @@ Tested with Foundry invariant tests through a handler that creates and resolves 
 ### 3.1 Ingestion
 
 * Polling with `getLogs` over block ranges instead of a websocket subscription. Rationale: ranges plus a checkpoint survive restarts and dropped connections; a subscription would need the same backfill logic anyway.
+* Libraries: `viem` as the RPC client and `pg` as the Postgres driver. No ORM.
 * Config: `START_BLOCK` (deploy block), `CONFIRMATIONS`, `BATCH_SIZE`, `POLL_INTERVAL_MS`.
 * Loop:
   1. `safeHead = head - CONFIRMATIONS`
@@ -218,8 +220,8 @@ Returns `404` for unknown ids and `400` for invalid ids.
 `GET /escrows?sender=&beneficiary=&status=&limit=&cursor=`
 
 * Ordered by id descending. `limit` defaults to 20, maximum 100. `cursor` is the last id of the previous page.
-* `status` accepts the onchain statuses plus `PendingExpired`.
-* Invalid addresses or statuses return `400`.
+* `status` accepts the onchain statuses plus `PendingExpired`. Filtering applies to `effectiveStatus`, so `status=Pending` excludes escrows that are `PendingExpired`.
+* Invalid addresses, statuses or cursors return `400`.
 
 `GET /health`
 
@@ -227,7 +229,7 @@ Returns `404` for unknown ids and `400` for invalid ids.
 { "status": "ok", "chainId": 31337, "lastIndexedBlock": 120, "chainHead": 121, "lagBlocks": 1 }
 ```
 
-`status` is `degraded` when the RPC is unreachable or the lag exceeds a configured threshold.
+`status` is `degraded` when the RPC is unreachable or `lagBlocks > CONFIRMATIONS + HEALTH_MAX_EXTRA_LAG_BLOCKS`. `HEALTH_MAX_EXTRA_LAG_BLOCKS` is configurable and defaults to `10`.
 
 Amounts are decimal strings because `uint256` exceeds the JavaScript number range.
 
