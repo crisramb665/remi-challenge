@@ -31,6 +31,8 @@ Cross-cutting rules live in CLAUDE.md and SPEC §2.6.
 | §3.1 Ingestion, §3.2 Atomicity, §3.3 Reorgs | T-06, T-07 |
 | §3.4 Schema | T-06 |
 | §4.1 to §4.4 API | T-08 |
+| §5 Assumptions, §6 Out of scope | T-10 (README) |
+| §7 Deliverables | T-05, T-09, T-10 |
 
 ---
 
@@ -84,12 +86,12 @@ Acceptance:
 
 ### T-05 Slither, formatting and deploy script
 
-Spec: §2.10, §3.1 (`START_BLOCK`) · Depends on: T-04 · Status: [ ]
+Spec: §2.10, §3.1 (`START_BLOCK`), §7 · Depends on: T-04 · Status: [ ]
 
 Acceptance:
 
 * `slither .` findings triaged in `docs/slither.md`; `forge fmt --check` passes.
-* `script/Deploy.s.sol` deploys to Anvil and outputs address and deploy block.
+* `script/Deploy.s.sol` deploys to Anvil with a default Anvil test account and writes the contract address and deploy block to an output file, so the `deploy` service in T-09 can place them on the shared volume. No hardcoded addresses.
 
 ---
 
@@ -101,7 +103,8 @@ Spec: §3.1, §3.3, §3.4 · Depends on: T-05 · Status: [ ]
 
 Acceptance:
 
-* NestJS app boots; config validated for `RPC_URL`, `CONTRACT_ADDRESS`, `START_BLOCK`, `CONFIRMATIONS`, `BATCH_SIZE`, `POLL_INTERVAL_MS`, `HEALTH_MAX_EXTRA_LAG_BLOCKS` (default `10`), database URL.
+* Contract address and `START_BLOCK` are read from the deploy output on the shared volume, never hardcoded (§7, CLAUDE.md).
+* NestJS app boots; config validated for `RPC_URL`, `CONFIRMATIONS`, `BATCH_SIZE`, `POLL_INTERVAL_MS`, `HEALTH_MAX_EXTRA_LAG_BLOCKS` (default `10`), database URL.
 * Migration creates `escrows` and `indexer_state` as in §3.4, with indexes and lowercase addresses.
 * Dependencies: `viem` as the RPC client and `pg` as the Postgres driver. No ORM.
 
@@ -138,15 +141,28 @@ Acceptance:
 
 ## Phase 4: Integration
 
-### T-09 Docker Compose, end-to-end script and README
+### T-09 Docker Compose and end-to-end script
 
-Spec: CLAUDE.md layout · Depends on: T-08 · Status: [ ]
+Spec: §7 · Depends on: T-08 · Status: [ ]
 
 Acceptance:
 
-* Root `docker-compose.yml` starts Anvil, Postgres and the API.
-* Root e2e script deploys, creates escrows, warps time, runs every action and asserts API responses.
-* README with run instructions.
+* Root `docker-compose.yml` with services `anvil`, `deploy`, `postgres` and `api`. `deploy` writes the contract address and deploy block to a shared volume; `api` starts after `deploy` completes.
+* Root e2e script runs against a fresh stack, creates escrows and covers confirm, reject, cancel and expire, asserting API responses.
+* Only Anvil default test accounts are used.
+* Time moves with `evm_increaseTime` followed by `evm_mine`.
+* Before each assertion the script waits until `/health` reports `lastIndexedBlock` at or after the transaction's block.
+* The script exits nonzero on any failed assertion.
+
+### T-10 CI and README
+
+Spec: §5, §6, §7 · Depends on: T-09 · Status: [ ]
+
+Acceptance:
+
+* CI runs contract tests, API tests, `forge fmt --check` and linters.
+* README covers setup, test commands, curl examples, design decisions, assumptions and future work.
+* `docs/slither.md` and `docs/ai/` are complete.
 
 ---
 
@@ -155,12 +171,12 @@ Acceptance:
 Answered by the developer on 2026-11-07 and reconciled into `docs/SPEC.md` (§2.6, §3.1, §4.3).
 
 * T-01: latest stable OpenZeppelin 5.x release tag with a published audit.
-* T-05: the deploy script is in scope.
+* T-05: the deploy script is in scope (now required by the `deploy` service in §7).
 * T-06: `viem` for RPC, `pg` for Postgres, no ORM.
 * T-08: `status=Pending` excludes `PendingExpired`.
 * T-08: an invalid `cursor` returns `400`.
 * T-08: `degraded` when `lagBlocks > CONFIRMATIONS + HEALTH_MAX_EXTRA_LAG_BLOCKS`, default `10`.
-* T-09: Docker Compose and the e2e script are in scope through the CLAUDE.md layout, which applies to the whole project.
+* T-09: Docker Compose and the e2e script are defined in SPEC §7; CLAUDE.md adds the conventions.
 
 ## Open questions
 

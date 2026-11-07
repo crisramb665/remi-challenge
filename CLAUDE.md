@@ -39,4 +39,11 @@ cd contracts && forge fmt
 cd contracts && slither .
 ```
 
-API and Docker commands will be added once they exist.
+## Docker and end to end
+
+* Behavior is defined in SPEC §7. This section only covers conventions.
+* Never hardcode contract addresses or deploy blocks. The `deploy` service writes them to the shared volume and the API reads them from there.
+* Use only Anvil's default test accounts. Never use or request real keys.
+* Advance time with `evm_increaseTime` followed by `evm_mine`, so the API sees the new block timestamp.
+* Before asserting API responses, wait until `/health` reports a `lastIndexedBlock` at or after the block of the transaction being checked.
+* The script must run against a fresh stack and exit with a nonzero code on any failed assertion.

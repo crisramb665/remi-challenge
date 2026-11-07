@@ -31,3 +31,17 @@ Decisions to review:
 
 * Wording: filtering on `effectiveStatus` means `status=PendingExpired` returns only expired pending escrows, and the other statuses are unaffected.
 * Deploy script and Docker/e2e scope were left out of the spec on purpose; they come from CLAUDE.md.
+
+## 2026-11-07: README and TASKS aligned with CLAUDE.md and SPEC §7
+
+Request: update the README and fix inconsistencies in `docs/TASKS.md` against the current CLAUDE.md and SPEC.
+
+Summary:
+
+* TASKS: traceability now covers §5, §6 and §7. T-05 deploy script writes address and deploy block to an output file. T-06 reads them from the shared volume instead of `CONTRACT_ADDRESS`/`START_BLOCK` config. T-09 now follows SPEC §7 and the CLAUDE.md Docker conventions. A new T-10 covers CI and the README. Resolved decisions point to §7.
+* README: links TASKS, adds `pg` (no ORM), the audited OpenZeppelin pin and the compose services. The `scripts/` folder is removed because the e2e script lives at the root. "AI prompts" is replaced by the AI log.
+
+Decisions to review:
+
+* T-06 assumes the API reads the address and deploy block from a file on the shared volume. The file name and format are not in the spec.
+* The README file is named `README.MD`. I kept that name.
