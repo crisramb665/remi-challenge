@@ -13,9 +13,7 @@ Status legend: `[ ]` todo, `[~]` in progress, `[x]` done.
 
 ## Cross-cutting rules
 
-* Solidity `0.8.24` fixed pragma, custom errors only, checks-effects-interactions, NatSpec on external functions, events and errors.
-* Security primitives come from OpenZeppelin 5.x as installed: `SafeERC20` for every transfer and `ReentrancyGuard` for reentrancy protection. Never reimplement them or copy their code into `src/`. Only the escrow logic is custom (SPEC §2.6).
-* No dependencies beyond those listed in the spec without asking.
+Cross-cutting rules live in CLAUDE.md and SPEC §2.6.
 
 ## Traceability
 

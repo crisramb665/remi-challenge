@@ -249,3 +249,11 @@ Data lags the chain by at least `CONFIRMATIONS` blocks. The API can show `Pendin
 * Fee on transfer support recording the received amount.
 * Reorg rollback with block hash tracking.
 * Authentication and rate limiting for the API.
+
+## 7. Deliverables
+
+* Root `docker-compose.yml` with services `anvil`, `deploy`, `postgres` and `api`. `deploy` writes the contract address and deploy block to a shared volume and `api` starts after it completes.
+* Root end to end script that creates escrows and runs confirm, reject, cancel and expire, advancing Anvil time, and asserts API responses.
+* CI running contract tests, API tests, `forge fmt --check` and linters.
+* README with setup, test commands, curl examples, design decisions, assumptions and future work.
+* `docs/slither.md` with triaged findings and `docs/ai/` with prompts and outputs.
