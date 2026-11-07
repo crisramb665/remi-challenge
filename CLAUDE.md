@@ -18,6 +18,8 @@
 * Write or update tests together with each function. A change is done only when tests pass.
 * Do not add dependencies beyond those listed in the spec, or features and abstractions it does not require
 * Do not commit. The developer reviews and commits every change.
+* Do not run commands that change the project (installs, scaffolding, git, file moves, builds that write files). Give them to the developer one by one, in order, with a short note on what each does, and wait for the result before the next step. Read-only checks are fine.
+* End every response with the list of commands used or proposed.
 * After each task, append to `docs/ai/log.md`: the request, a short summary of what was done and any decision that needs review.
 
 ## Solidity
