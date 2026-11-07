@@ -16,7 +16,7 @@
 
 * Work on one task at a time and keep changes small.
 * Write or update tests together with each function. A change is done only when tests pass.
-* Do not add dependencies, features or abstractions that the spec does not require.
+* Do not add dependencies beyond those listed in the spec, or features and abstractions it does not require
 * Do not commit. The developer reviews and commits every change.
 * After each task, append to `docs/ai/log.md`: the request, a short summary of what was done and any decision that needs review.
 
@@ -27,6 +27,8 @@
 * Checks, effects, interactions in every state changing function.
 * `SafeERC20` for every token transfer.
 * NatSpec on external functions, events and errors.
+* Never write custom implementations of functionality that OpenZeppelin already provides (token transfers, reentrancy guards, access control, math). Use the library as installed and do not copy its code into `src/`.
+* Install OpenZeppelin with a pinned release tag. Do not use other libraries without asking.
 
 ## Commands
 

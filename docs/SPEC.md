@@ -84,7 +84,8 @@ Note: the required event is named `EscrowExpired`, so the time errors use differ
 * `nonReentrant` on every state changing function. `createEscrow` must transfer before writing state because of the balance check, so the guard is required there and kept everywhere as defense in depth.
 * No owner, no pause, no upgradeability and no rescue function. Only the parties in the table above can move funds.
 * Tokens sent directly to the contract are not attributed to any escrow and remain locked. A rescue function would contradict the rule that nobody else can move funds.
-* Fixed pragma (`0.8.24`) and OpenZeppelin 5.x.
+* Security primitives come from OpenZeppelin 5.x and are never reimplemented: `SafeERC20` for transfers and `ReentrancyGuard` for reentrancy protection. Only the escrow logic itself is custom code.
+* Fixed pragma (`0.8.24`)
 
 ### 2.7 Events
 
