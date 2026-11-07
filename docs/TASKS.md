@@ -40,9 +40,9 @@ Cross-cutting rules live in CLAUDE.md and SPEC §2.6.
 
 ### T-01 Project setup and contract skeleton
 
-Spec: §2.1, §2.2, §2.4, §2.7, §2.8 · Depends on: none · Status: [ ]
+Spec: §2.1, §2.2, §2.4, §2.7, §2.8 · Depends on: none · Status: [x]
 
-Scope: Foundry project in `contracts/` with `forge-std` and OpenZeppelin 5.x at a pinned release tag. `contracts/src/Escrow.sol` with constants, `Status`, `Escrow` struct, `_escrows`, `nextId = 1`, all errors and events with NatSpec, inherits OZ `ReentrancyGuard`, and the `getEscrow` view.
+Scope: Foundry project in `contracts/` with `forge-std` and OpenZeppelin 5.x at a pinned release tag, both installed as git submodules. `contracts/src/EscrowManager.sol` (contract `EscrowManager`; the name `Escrow` is taken by the struct in §2.2) with constants, `Status`, `Escrow` struct, `_escrows`, `nextId = 1`, all errors and events with NatSpec, inherits OZ `ReentrancyGuard`, and the `getEscrow` view.
 
 Acceptance:
 
