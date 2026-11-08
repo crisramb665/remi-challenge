@@ -118,7 +118,7 @@ Acceptance:
 
 ### T-07 Ingestion and projection
 
-Spec: §3.1, §3.2 · Depends on: T-06 · Status: [ ]
+Spec: §3.1, §3.2 · Depends on: T-06 · Status: [x]
 
 Acceptance:
 

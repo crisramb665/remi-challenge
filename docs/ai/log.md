@@ -188,3 +188,27 @@ Decisions to review:
 * Database tests are skipped, with a warning, when `TEST_DATABASE_URL` is unset. T-10 (CI) must set it so they never skip silently.
 * `@parcel/watcher` build scripts are disabled in `api/pnpm-workspace.yaml`; its prebuilt binary is used.
 * The deployment address is lowercased when read, to match the lowercase addresses in the database.
+
+## 2026-11-07: T-07 Ingestion and projection
+
+Request: implement the ingestion loop and the projection into Postgres (SPEC §3.1 and §3.2), working one task at a time with the developer running the commands.
+
+Summary: built in four small steps, each with tests, under `api/src/indexer/`:
+
+* `range.ts`: pure `computeRange` (safe head = head minus confirmations, clamped to `BATCH_SIZE`, first run starts at the deploy block, null when nothing is confirmed). 12 unit tests.
+* `projection.ts` and `events.ts`: `applyRange` applies one range and moves the checkpoint in one transaction. It sorts events by `(blockNumber, logIndex)`, inserts `EscrowCreated` with `ON CONFLICT (id) DO NOTHING`, updates transitions `WHERE id = $1 AND status = 'Pending'` (`EscrowCancelled` becomes `CancelledBySender`), lowercases addresses, and upserts `indexer_state`. 18 database tests, including replay as a no-op and rollback of the whole range, checkpoint included, when one event fails.
+* `escrow.abi.ts` and `decode.ts`: the five events from §2.7 and `toEscrowEvents`, which validates positions and argument types. 11 tests, including a round trip through viem's own encoder and decoder and a check that the event hashes equal the ones `cast keccak` computes from the contract signatures.
+* `chain-reader.ts`, `indexer.service.ts`, `indexer.module.ts`: `IndexerService.runOnce()` and a polling loop started on application bootstrap. It sleeps `POLL_INTERVAL_MS` only when caught up or after an error, and the sleep is interrupted on shutdown. 10 database tests against a fake in-memory chain.
+
+Also changed: `AppModule` imports `IndexerModule`; `DatabaseModule` now closes the pool in `onApplicationShutdown` (after every `onModuleDestroy`) so the indexer stops first; the boot e2e test overrides `CHAIN_READER` with an empty chain.
+
+Verification: `format` and `lint` clean (0 warnings, 0 errors); `test` 95 passed across 7 suites; `test:e2e` 4 passed; `build` clean. Database tests ran against the throwaway `postgres:16-alpine` container.
+
+Decisions to review:
+
+* `ChainReader` is a small interface between the loop and viem. It is not in the spec, but it lets the loop be tested without a node. The real viem reader is only exercised end to end in T-09.
+* The event ABI is written by hand from §2.7. `decode.spec.ts` pins the hashes of the contract signatures, so a mismatch with the contract fails a test, but the hashes in the test are copied values and must be updated if an event changes.
+* Failures are logged and retried after `POLL_INTERVAL_MS`, with no backoff and no retry limit. A range that can never be applied would be retried forever; the log line shows why.
+* `applyRange` sorts the events itself, so ordering does not depend on the caller.
+* Limitations that the spec also accepts: a reorg deeper than `CONFIRMATIONS` leaves the projection wrong (§3.3), and if the chain is reset while the database keeps its checkpoint (head below the checkpoint) the indexer stays idle. A fresh stack with a fresh volume is not affected.
+* A `BATCH_SIZE` larger than the node allows per `getLogs` call makes every round fail; lower it in that case.

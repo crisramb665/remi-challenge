@@ -9,6 +9,7 @@ import { ConfigError } from '../src/config/config';
 import { DEPLOYMENT } from '../src/config/config.module';
 import { Deployment } from '../src/config/deployment';
 import { PG_POOL } from '../src/database/database.module';
+import { CHAIN_READER, ChainReader } from '../src/indexer/chain-reader';
 import {
   createIsolatedSchema,
   describeWithDb,
@@ -86,9 +87,17 @@ describe('AppModule boot', () => {
         DEPLOYMENT_FILE: deploymentFile,
       });
 
+      // An empty chain, so the indexer loop starts but never needs a node.
+      const emptyChain: ChainReader = {
+        getBlockNumber: () => Promise.resolve(0n),
+        getLogs: () => Promise.resolve([]),
+      };
       const moduleRef = await Test.createTestingModule({
         imports: [AppModule],
-      }).compile();
+      })
+        .overrideProvider(CHAIN_READER)
+        .useValue(emptyChain)
+        .compile();
       app = moduleRef.createNestApplication();
       await app.init();
     });

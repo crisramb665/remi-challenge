@@ -2,7 +2,7 @@ import {
   Global,
   Inject,
   Module,
-  OnModuleDestroy,
+  OnApplicationShutdown,
   OnModuleInit,
 } from '@nestjs/common';
 import { Pool } from 'pg';
@@ -25,14 +25,15 @@ export const PG_POOL = Symbol('PG_POOL');
   ],
   exports: [PG_POOL],
 })
-export class DatabaseModule implements OnModuleInit, OnModuleDestroy {
+export class DatabaseModule implements OnModuleInit, OnApplicationShutdown {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
   async onModuleInit(): Promise<void> {
     await applySchema(this.pool);
   }
 
-  async onModuleDestroy(): Promise<void> {
+  /** Runs after every `onModuleDestroy`, so the indexer has stopped before the pool closes. */
+  async onApplicationShutdown(): Promise<void> {
     await this.pool.end();
   }
 }
