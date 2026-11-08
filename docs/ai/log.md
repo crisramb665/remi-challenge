@@ -171,3 +171,20 @@ Decisions to review:
 
 * CLAUDE.md now tells future sessions to prefer `make` targets. The raw commands appear in the Makefile comments rather than in CLAUDE.md.
 * The README says to clone with `--recurse-submodules` because the libraries are git submodules.
+
+## 2026-11-07: T-06 API scaffold, config and schema
+
+Request: scaffold the NestJS API, validate its configuration, read the deployment from a file and create the §3.4 schema. Later request: use `@nestjs/config` instead of a hand-written config provider.
+
+Summary: `api/` was scaffolded by the developer with pnpm (CommonJS, jest), then `@nestjs/mau`, the `deploy` script and the sample controller and service were removed. Added `viem`, `pg`, `@types/pg` and `@nestjs/config`. `loadConfig` validates `RPC_URL`, `DATABASE_URL`, `CONFIRMATIONS`, `BATCH_SIZE`, `POLL_INTERVAL_MS`, `HEALTH_MAX_EXTRA_LAG_BLOCKS` (default 10) and `DEPLOYMENT_FILE` (default `/shared/deployment.json`), collects every error in one `ConfigError` and never echoes URLs. It runs inside a `registerAs('app', ...)` factory, so `@nestjs/config` loads `.env` and injects the result with `appConfig.KEY`. `loadDeployment` reads `{ address, startBlock }` from the JSON file and the app refuses to boot if it is missing or malformed. `database/schema.sql` creates `escrows` and `indexer_state` with `IF NOT EXISTS` and is applied by `DatabaseModule` at startup. `api/.env.example` documents the variables.
+
+Verification: `pnpm --dir api format` and `lint` clean; `test` 44 passed (35 without a database, the 9 schema tests run with `TEST_DATABASE_URL`); `test:e2e` 4 passed (invalid config and missing deployment stop the boot; schema created and deployment exposed on a good boot); `build` succeeds and `dist/database/schema.sql` is copied by the `assets` entry in `nest-cli.json`. Database tests ran against a throwaway `postgres:16-alpine` container, each test file in its own Postgres schema.
+
+Decisions to review:
+
+* `registerAs` plus the custom function is used instead of `ConfigModule`'s `validate` option, so validated values are not written back into `process.env`.
+* `CONFIRMATIONS`, `BATCH_SIZE` and `POLL_INTERVAL_MS` are required and have no defaults, as the spec lists no values. Only `HEALTH_MAX_EXTRA_LAG_BLOCKS` and `DEPLOYMENT_FILE` have defaults.
+* The schema adds constraints beyond §3.4: `NOT NULL` on the required columns, `CHECK (x = lower(x))` on the address columns, and `updated_at DEFAULT now()`. `resolved_tx` and `resolved_block` stay nullable. `amount` is `numeric(78,0)` so it holds any uint256.
+* Database tests are skipped, with a warning, when `TEST_DATABASE_URL` is unset. T-10 (CI) must set it so they never skip silently.
+* `@parcel/watcher` build scripts are disabled in `api/pnpm-workspace.yaml`; its prebuilt binary is used.
+* The deployment address is lowercased when read, to match the lowercase addresses in the database.

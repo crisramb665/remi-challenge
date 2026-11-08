@@ -104,16 +104,16 @@ Acceptance:
 
 ### T-06 API scaffold, config and schema
 
-Spec: §3.1, §3.3, §3.4 · Depends on: T-05 · Status: [ ]
+Spec: §3.1, §3.3, §3.4 · Depends on: T-05 · Status: [x]
 
 Acceptance:
 
 * Contract address and start block are read from a JSON file at `DEPLOYMENT_FILE` (default `/shared/deployment.json`) with the shape `{ "address": "0x...", "startBlock": 1 }`, the block already in decimal. They are never hardcoded (§7, CLAUDE.md). The T-09 `deploy` service writes this file.
 * NestJS app boots; config validated for `RPC_URL`, `CONFIRMATIONS`, `BATCH_SIZE`, `POLL_INTERVAL_MS`, `HEALTH_MAX_EXTRA_LAG_BLOCKS` (default `10`), database URL.
 * A plain `schema.sql` creates `escrows` and `indexer_state` as in §3.4, with indexes and lowercase addresses. It uses `IF NOT EXISTS` and is applied at startup with `pg`, so running it twice is safe. No migration library and no extra tables.
-* Config validation is a small hand-written function with unit tests, not `@nestjs/config`, `joi` or `class-validator`.
+* Config uses `@nestjs/config` (developer's choice) to load `.env` files and inject the settings through `registerAs`. The validation itself is a small hand-written function with unit tests that runs inside the `registerAs` factory; no `joi` or `class-validator`.
 * Package manager: `pnpm` (developer's choice). The lockfile is `pnpm-lock.yaml`.
-* Dependencies: the NestJS scaffold, `viem` as the RPC client and `pg` as the Postgres driver (plus `@types/pg`). No ORM.
+* Dependencies: the NestJS scaffold, `@nestjs/config`, `viem` as the RPC client and `pg` as the Postgres driver (plus `@types/pg`). No ORM.
 * The schema test runs against a Postgres container.
 
 ### T-07 Ingestion and projection
@@ -186,6 +186,7 @@ Answered by the developer on 2026-11-07 and reconciled into `docs/SPEC.md` (§2.
 * T-08: `degraded` when `lagBlocks > CONFIRMATIONS + HEALTH_MAX_EXTRA_LAG_BLOCKS`, default `10`.
 * T-09: Docker Compose and the e2e script are defined in SPEC §7; CLAUDE.md adds the conventions.
 * T-06: the schema is a plain idempotent SQL file applied with `pg`, and the deploy output is a JSON file at `DEPLOYMENT_FILE`. Both answered by the developer on 2026-11-07. The T-09 `deploy` service must write that JSON file.
+* T-06: use `@nestjs/config` for loading and injecting the environment instead of a hand-written provider; the validation stays custom. Answered by the developer on 2026-11-07.
 
 ## Open questions
 
