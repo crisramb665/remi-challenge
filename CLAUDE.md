@@ -34,12 +34,21 @@
 
 ## Commands
 
+`contracts/Makefile` wraps the long Foundry, Anvil and Slither commands. Run `make` targets from `contracts/` and prefer them over the raw commands. Check `contracts/Makefile` for the exact command behind a target.
+
 ```
-cd contracts && forge build
-cd contracts && forge test -vvv
-cd contracts && forge fmt
-cd contracts && slither .
+cd contracts && make build        # forge build
+cd contracts && make test         # forge test -vvv
+cd contracts && make test-deep    # invariants at 256 runs of depth 500
+cd contracts && make fmt          # forge fmt
+cd contracts && make fmt-check    # forge fmt --check
+cd contracts && make slither      # slither on src/ only, see docs/slither.md
+cd contracts && make anvil        # local node
+cd contracts && make deploy-local # deploy to the local node
+cd contracts && make deploy-info  # address and deploy block of the last local deploy
 ```
+
+When a Makefile target changes, update this list in the same task.
 
 ## Docker and end to end
 

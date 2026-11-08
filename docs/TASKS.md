@@ -89,12 +89,14 @@ Acceptance:
 
 ### T-05 Slither, formatting and deploy script
 
-Spec: §2.10, §3.1 (`START_BLOCK`), §7 · Depends on: T-04 · Status: [ ]
+Spec: §2.10, §3.1 (`START_BLOCK`), §7 · Depends on: T-04 · Status: [x]
 
 Acceptance:
 
 * `slither .` findings triaged in `docs/slither.md`; `forge fmt --check` passes.
-* `script/Deploy.s.sol` deploys to Anvil with a default Anvil test account and writes the contract address and deploy block to an output file, so the `deploy` service in T-09 can place them on the shared volume. No hardcoded addresses.
+* `script/Deploy.s.sol` only deploys, from the account `forge script` broadcasts with (an Anvil default account, no key in the repository). Forge's broadcast file `broadcast/Deploy.s.sol/<chainId>/run-latest.json` holds the contract address (`.transactions[0].contractAddress`) and the exact deploy block (`.receipts[0].blockNumber`), which the `deploy` service in T-09 extracts to the shared volume. No hardcoded addresses.
+* A test runs the script and checks the deployed contract.
+* The script was run against a local Anvil and the broadcast file contains both values.
 
 ---
 

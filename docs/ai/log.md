@@ -131,3 +131,43 @@ Decisions to review:
 * Foundry resets storage after each run, so the counters cannot give totals across the whole campaign. The deterministic coverage tests are what guarantee reachability; the weighted caller, id and time choices raise how often the fuzzer gets there.
 * `MockNoReturnERC20` is a small hand-written token because OpenZeppelin ships no token without return values. It lives in `test/mocks/` only. The rule against reimplementing OpenZeppelin applies to `src/`.
 * The `ReentrancyGuard` tests rely on OpenZeppelin 5.x `SafeERC20` bubbling up the token's revert data, which `v5.6.1` does.
+
+## 2026-11-07: T-05 Slither, formatting and deploy script done
+
+Request: implement T-05.
+
+Summary:
+
+* `contracts/script/Deploy.s.sol` only deploys `EscrowManager` from the account `forge script` broadcasts with, so no key is in the repository. `test/DeployScript.t.sol` runs it. The developer deployed to a local Anvil with `--unlocked --sender 0xf39F...2266`; forge's broadcast file held the address (`.transactions[0].contractAddress`, lowercase) and the exact block (`.receipts[0].blockNumber`, hex `0x1`).
+* Slither 0.11.6 (installed with Homebrew) found 5 results from 2 detectors on `src/`: `incorrect-equality` and `timestamp`. None needs a code change. Triage is in `docs/slither.md`: the `Status.None` comparison is a false positive, and the `block.timestamp` comparisons are the required time rules.
+* `forge fmt --check` is clean and all 74 tests pass.
+
+Decisions to review:
+
+* The developer chose to keep the deploy script minimal and let the T-09 `deploy` service read forge's broadcast file with `jq`, instead of having the script write its own JSON. The block is exact this way and `foundry.toml` needs no `fs_permissions`. T-09 must convert the hex block to decimal for `START_BLOCK`.
+* Slither excludes `lib/`, `test/` and `script/` (`--filter-paths`). OpenZeppelin is audited upstream and used as installed.
+* No `slither-disable` comments were added to the contract, so future runs keep reporting these findings and they are re-triaged from the table rather than hidden.
+* `broadcast/*/31337/` is already in `contracts/.gitignore`, so Anvil deployments are not committed.
+
+## 2026-11-07: contracts/Makefile
+
+Request: consider a Makefile for the long forge, anvil and slither commands.
+
+Summary: added `contracts/Makefile` (agreed location, since Foundry commands run from `contracts/`) with the targets `build`, `test`, `test-deep`, `fmt`, `fmt-check`, `slither`, `anvil`, `deploy-local` and `deploy-info`. `RPC_URL`, `DEPLOYER` and `BROADCAST` can be overridden, for example `make deploy-local RPC_URL=...`. `make -n` was used to check the expanded commands without running them.
+
+Decisions to review:
+
+* It is a convenience layer that is not in the spec and adds no dependencies. `DEPLOYER` is Anvil's public first test account.
+* CLAUDE.md "Commands" still lists the raw commands. It was not edited; adding the `make` targets there would keep the two in sync.
+* `test-deep` is the 256 x 500 invariant run; T-10 (CI) can use it.
+
+## 2026-11-07: Makefile referenced in CLAUDE.md and README
+
+Request: reference the Makefile usage in CLAUDE.md and the README.
+
+Summary: the CLAUDE.md "Commands" section now lists the `make` targets, says to prefer them over the raw commands and to update the list whenever a target changes. The README has a new "Contracts" section with a table of the targets, the Foundry and Slither requirements, and a note to clone with submodules. SPEC §7 already asks the README for test commands, so this is a first part; API commands come later.
+
+Decisions to review:
+
+* CLAUDE.md now tells future sessions to prefer `make` targets. The raw commands appear in the Makefile comments rather than in CLAUDE.md.
+* The README says to clone with `--recurse-submodules` because the libraries are git submodules.
