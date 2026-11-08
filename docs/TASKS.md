@@ -161,6 +161,8 @@ Acceptance:
 
 * Root `docker-compose.yml` with services `anvil`, `deploy`, `postgres` and `api`. `deploy` writes the contract address and deploy block to a shared volume as the JSON file `{ "address": "0x...", "startBlock": 1 }` (block in decimal, converted from forge's hex receipt value); `api` reads it from `DEPLOYMENT_FILE` and starts after `deploy` completes.
 * Root e2e script runs against a fresh stack, creates escrows and covers confirm, reject, cancel and expire, asserting API responses.
+* The end-to-end script is a bash script at the repo root using Foundry's `cast`, `curl` and `jq` (developer's choice, 2026-11-08). It deploys a mock ERC-20 from `contracts/test/mocks`.
+* No automated tests are added for the Dockerfiles or the compose file; the end-to-end script is their test, and `docker compose config` checks the compose file's syntax.
 * Only Anvil default test accounts are used.
 * Time moves with `evm_increaseTime` followed by `evm_mine`.
 * Before each assertion the script waits until `/health` reports `lastIndexedBlock` at or after the transaction's block.
@@ -175,6 +177,7 @@ Acceptance:
 * CI runs contract tests, API tests, `forge fmt --check` and linters.
 * README covers setup, test commands, curl examples, design decisions, assumptions and future work.
 * `docs/slither.md` and `docs/ai/` are complete.
+* Test review (developer's request, 2026-11-08): a separate pass removes duplicated coverage only, so each requirement is tested once. The contract tests and invariants, and the projection and indexer tests, stay. Everything is re-run afterwards and the removed tests are listed in `docs/ai/log.md`.
 
 ### T-11 Architecture document
 
