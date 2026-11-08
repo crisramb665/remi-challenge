@@ -206,9 +206,9 @@ Verification: `format` and `lint` clean (0 warnings, 0 errors); `test` 95 passed
 
 Decisions to review:
 
-* `ChainReader` is a small interface between the loop and viem. It is not in the spec, but it lets the loop be tested without a node. The real viem reader is only exercised end to end in T-09.
+* `ChainReader` is a small interface between the loop and viem. It is not in the spec, but it lets the loop be tested without a node, and it keeps every RPC call in one file. It has one implementation and is not meant as an extension point. The real viem reader is only exercised end to end in T-09. The rationale is documented on the interface in `chain-reader.ts`.
 * The event ABI is written by hand from §2.7. `decode.spec.ts` pins the hashes of the contract signatures, so a mismatch with the contract fails a test, but the hashes in the test are copied values and must be updated if an event changes.
-* Failures are logged and retried after `POLL_INTERVAL_MS`, with no backoff and no retry limit. A range that can never be applied would be retried forever; the log line shows why.
+* Failures are logged and retried after `POLL_INTERVAL_MS`, with no backoff and no retry limit. A range that can never be applied would be retried forever; the log line shows why. viem's HTTP transport retries each request 3 times on its own (150 ms base delay), so a short blip is absorbed before the loop sees it. The reasoning and the "with more time" version are in the comment in `IndexerService.run()`.
 * `applyRange` sorts the events itself, so ordering does not depend on the caller.
 * Limitations that the spec also accepts: a reorg deeper than `CONFIRMATIONS` leaves the projection wrong (§3.3), and if the chain is reset while the database keeps its checkpoint (head below the checkpoint) the indexer stays idle. A fresh stack with a fresh volume is not affected.
 * A `BATCH_SIZE` larger than the node allows per `getLogs` call makes every round fail; lower it in that case.

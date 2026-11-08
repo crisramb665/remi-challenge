@@ -75,6 +75,11 @@ export class IndexerService implements OnApplicationBootstrap, OnModuleDestroy {
       try {
         progressed = await this.runOnce();
       } catch (error) {
+        // No backoff and no retry limit, on purpose: a failed round waits one POLL_INTERVAL_MS and
+        // tries the same range again, which is safe because nothing was written. This suits one
+        // local node and one indexer. viem already retries a single request a few times with a
+        // short growing delay, so this only handles longer outages. With more time: exponential
+        // backoff with jitter and a cap, and report a degraded /health after N failed rounds.
         this.logger.error(
           `Indexing failed, will retry: ${error instanceof Error ? error.message : String(error)}`,
         );
