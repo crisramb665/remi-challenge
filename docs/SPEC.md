@@ -221,7 +221,15 @@ Returns `404` for unknown ids and `400` for invalid ids.
 
 * Ordered by id descending. `limit` defaults to 20, maximum 100. `cursor` is the last id of the previous page.
 * `status` accepts the onchain statuses plus `PendingExpired`. Filtering applies to `effectiveStatus`, so `status=Pending` excludes escrows that are `PendingExpired`.
-* Invalid addresses, statuses or cursors return `400`.
+* Addresses are accepted in any letter case and compared in lowercase.
+* Invalid addresses, statuses, cursors or limits return `400`. A `limit` that is not an integer from 1 to 100 is rejected, not clamped. A parameter that is present but empty or repeated is also invalid.
+* The body wraps the escrows, each with the same fields as `GET /escrows/:id`:
+
+```json
+{ "items": [ { "id": "2", "...": "..." }, { "id": "1", "...": "..." } ], "nextCursor": "1" }
+```
+
+`nextCursor` is the value to send as `cursor` to get the next page, and `null` on the last page.
 
 `GET /health`
 
@@ -230,6 +238,12 @@ Returns `404` for unknown ids and `400` for invalid ids.
 ```
 
 `status` is `degraded` when the RPC is unreachable or `lagBlocks > CONFIRMATIONS + HEALTH_MAX_EXTRA_LAG_BLOCKS`. `HEALTH_MAX_EXTRA_LAG_BLOCKS` is configurable and defaults to `10`.
+
+* `/health` always answers `200`; the state is in `status`.
+* When the RPC is unreachable, `chainId`, `chainHead` and `lagBlocks` are `null` and `lastIndexedBlock` still comes from the database.
+* Before the indexer has stored its first checkpoint, `lastIndexedBlock` is `null` and `lagBlocks` is counted from `startBlock - 1`, where `startBlock` is the deploy block.
+
+If the RPC is unreachable, `GET /escrows` and `GET /escrows/:id` return `503`, because `now` (§4.1) cannot be known and the server clock is not used instead.
 
 Amounts are decimal strings because `uint256` exceeds the JavaScript number range.
 

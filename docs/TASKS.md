@@ -33,6 +33,7 @@ Cross-cutting rules live in CLAUDE.md and SPEC §2.6.
 | §4.1 to §4.4 API | T-08 |
 | §5 Assumptions, §6 Out of scope | T-10 (README) |
 | §7 Deliverables | T-05, T-09, T-10 |
+| Architecture document (not in the spec) | T-11 |
 
 ---
 
@@ -133,7 +134,7 @@ Acceptance:
 
 ### T-08 Endpoints
 
-Spec: §4.1, §4.2, §4.3, §4.4 · Depends on: T-07 · Status: [ ]
+Spec: §4.1, §4.2, §4.3, §4.4 · Depends on: T-07 · Status: [x]
 
 Acceptance:
 
@@ -143,7 +144,10 @@ Acceptance:
 * `GET /escrows` filters, `PendingExpired`, id desc order, `limit` 20/100, cursor, `400` on bad input.
 * `status=Pending` returns only escrows whose effective status is `Pending` (it excludes `PendingExpired`).
 * An invalid `cursor` returns `400`.
+* `GET /escrows` returns `{ "items": [...], "nextCursor": "<last id>" | null }`; `nextCursor` is null on the last page. The item shape is the one of `GET /escrows/:id`.
+* A `limit` that is not an integer from 1 to 100 returns `400`.
 * `GET /health` returns `ok` or `degraded` with lag fields; `degraded` when the RPC is unreachable or `lagBlocks > CONFIRMATIONS + HEALTH_MAX_EXTRA_LAG_BLOCKS`.
+* Before the first checkpoint, `/health` reports `lastIndexedBlock: null` and counts the lag from `startBlock - 1`.
 
 ---
 
@@ -172,6 +176,22 @@ Acceptance:
 * README covers setup, test commands, curl examples, design decisions, assumptions and future work.
 * `docs/slither.md` and `docs/ai/` are complete.
 
+### T-11 Architecture document
+
+Spec: none (requested by the developer, not a §7 deliverable) · Depends on: T-09 · Status: [ ]
+
+Scope: one file, `docs/ARCHITECTURE.md`, with Mermaid diagrams written inside the Markdown so GitHub renders them. No new dependencies and no image files. The README links to it and keeps its own short design-decisions section.
+
+Acceptance:
+
+* Component diagram: Anvil, the contract, the `deploy` service and the shared volume, the indexer inside the API, Postgres and the clients, showing who reads and writes what.
+* Escrow lifecycle state diagram: `None → Pending → Released | Rejected | CancelledBySender | Expired`, with the cancel window and TTL, and the derived `PendingExpired` marked as never stored.
+* Indexer flow for one round: head, safe head, range, `getLogs`, decode, one transaction with the checkpoint, and the failure and retry path.
+* Data model diagram of `escrows` and `indexer_state`, plus a table of which event writes which column.
+* Request flow for `GET /escrows` (database read, latest block timestamp as `now`, derived fields) and for `GET /health`.
+* A short written explanation of the guarantees (idempotency, atomicity, ordering), how time is handled, and what is deliberately not done (deep reorgs, backoff, raw event table), each point tied to the file that implements it.
+* Every file path, name and rule in the document is checked against the repository before the task is closed.
+
 ---
 
 ## Resolved decisions
@@ -187,6 +207,11 @@ Answered by the developer on 2026-11-07 and reconciled into `docs/SPEC.md` (§2.
 * T-09: Docker Compose and the e2e script are defined in SPEC §7; CLAUDE.md adds the conventions.
 * T-06: the schema is a plain idempotent SQL file applied with `pg`, and the deploy output is a JSON file at `DEPLOYMENT_FILE`. Both answered by the developer on 2026-11-07. The T-09 `deploy` service must write that JSON file.
 * T-06: use `@nestjs/config` for loading and injecting the environment instead of a hand-written provider; the validation stays custom. Answered by the developer on 2026-11-07.
+
+* T-08: `GET /escrows` returns a wrapper `{ items, nextCursor }`. Answered by the developer on 2026-11-08 and reconciled into SPEC §4.3.
+* T-08: an out-of-range or non-integer `limit` returns `400` instead of being clamped. Answered by the developer on 2026-11-08 and reconciled into SPEC §4.3.
+* T-08: before the first checkpoint, `/health` shows `lastIndexedBlock: null` and measures the lag from `startBlock - 1`. Answered by the developer on 2026-11-08 and reconciled into SPEC §4.3.
+* T-08: `GET /escrows` and `GET /escrows/:id` return `503` when the RPC is unreachable, and `/health` always answers `200`. Chosen while implementing T-08 and reconciled into SPEC §4.3 at the developer's request.
 
 ## Open questions
 

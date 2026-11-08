@@ -90,6 +90,8 @@ describe('AppModule boot', () => {
       // An empty chain, so the indexer loop starts but never needs a node.
       const emptyChain: ChainReader = {
         getBlockNumber: () => Promise.resolve(0n),
+        getChainId: () => Promise.resolve(31337),
+        getLatestBlock: () => Promise.resolve({ number: 0n, timestamp: 0n }),
         getLogs: () => Promise.resolve([]),
       };
       const moduleRef = await Test.createTestingModule({

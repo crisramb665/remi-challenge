@@ -33,6 +33,14 @@ class FakeChain implements ChainReader {
     return Promise.resolve(this.head);
   }
 
+  getChainId(): Promise<number> {
+    return Promise.resolve(31337);
+  }
+
+  getLatestBlock(): Promise<{ number: bigint; timestamp: bigint }> {
+    return Promise.resolve({ number: this.head, timestamp: 0n });
+  }
+
   getLogs(range: BlockRange): Promise<DecodedLog[]> {
     this.requested.push(range);
     if (this.failures > 0) {

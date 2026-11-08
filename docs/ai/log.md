@@ -212,3 +212,45 @@ Decisions to review:
 * `applyRange` sorts the events itself, so ordering does not depend on the caller.
 * Limitations that the spec also accepts: a reorg deeper than `CONFIRMATIONS` leaves the projection wrong (§3.3), and if the chain is reset while the database keeps its checkpoint (head below the checkpoint) the indexer stays idle. A fresh stack with a fresh volume is not affected.
 * A `BATCH_SIZE` larger than the node allows per `getLogs` call makes every round fail; lower it in that case.
+
+## 2026-11-08: T-08 Endpoints
+
+Request: implement `GET /escrows/:id`, `GET /escrows` and `GET /health` (SPEC §4.1 to §4.4), one small step at a time with the developer running the commands. Also added the documentation task T-11 (`docs/ARCHITECTURE.md`) to `docs/TASKS.md`, to be done after T-09.
+
+Questions asked because SPEC §4.3 is silent, answered by the developer (SPEC not edited):
+
+* `GET /escrows` returns `{ "items": [...], "nextCursor": "<id>" | null }`.
+* A `limit` outside 1 to 100, or not an integer, returns 400 (no clamping).
+* Before the first checkpoint `/health` shows `lastIndexedBlock: null` and measures the lag from `startBlock - 1`.
+
+Summary: built in five steps under `api/src/escrows/` and `api/src/health/`:
+
+* `escrow-view.ts`: pure `toEscrowView(row, now)` with `effectiveStatus` and the four `can*` flags (§4.2). 16 tests at `D - 1`, `D`, `E - 1`, `E`, for every status.
+* `query.ts`: pure parsers for ids, cursor, addresses, status and limit; any invalid value is a 400. Addresses are accepted in any letter case and lowercased. 69 test cases.
+* `escrows.repository.ts`: the SQL. Orders by `id DESC`, pages with `id < cursor`, and fetches `limit + 1` rows so `nextCursor` is null on the last page. The `status` filter applies to the effective status using the same `now` (`Pending` means not yet expired, `PendingExpired` means expired). All values are query parameters. 23 database tests.
+* `ChainReader` gained `getLatestBlock()` and `getChainId()`. `chain-reader.spec.ts` (6 tests) runs the real viem reader against a minimal JSON-RPC server, checking the requests it sends (contract address, hex block range, the filter with all five event hashes) and how it decodes the answers.
+* `escrows.service.ts`, `escrows.controller.ts`, `health.ts` (pure `buildHealth`), `health.service.ts`, `health.controller.ts` and their modules. `now` is the timestamp of the latest block from the node, read once per request. `test/support/api-app.ts` starts the whole app on an isolated schema with a controllable fake node; `test/escrows.e2e-spec.ts` (38 tests) and `test/health.e2e-spec.ts` (9 tests) call it over HTTP with `supertest`. `supertest` came with the Nest scaffold, so no dependency was added.
+
+Verification: `format` and `lint` clean (0 warnings, 0 errors, 43 files); `test` 234 passed in 12 suites; `test:e2e` 51 passed in 3 suites; `build` clean. Database tests ran against the throwaway `postgres:16-alpine` container.
+
+Decisions to review:
+
+* SPEC §4.3 still does not describe the `GET /escrows` body, the `limit` rule or the empty-health case. The answers are only in `docs/TASKS.md`. If the spec is meant to match, it needs a reconciliation edit; I did not make it.
+* `GET /escrows` and `GET /escrows/:id` return 503 when the node cannot be reached, because `now` cannot be known and SPEC §4.1 rules out the server clock. This was my choice; the spec does not say. With viem's built-in retries a request can take about one second to fail.
+* `/health` always answers 200; `degraded` is in the body. When the node is unreachable it reports `chainId`, `chainHead` and `lagBlocks` as null and keeps `lastIndexedBlock` from the database.
+* A negative `lagBlocks` (node head below the checkpoint, for example after the chain is reset while the database keeps its data) is shown as is and counts as `ok`. It is visible but not flagged.
+* An empty query value (`?sender=`), a repeated parameter (`?limit=1&limit=2`) and an id with leading zeros are all 400. Unknown parameters are ignored.
+* Ids are validated up to `2^256 - 1`, because the contract's ids are `uint256`.
+* Every request makes one RPC call (`getLatestBlock`), with no caching. Simple and always current; it costs one round trip per request.
+* The viem reader is now tested against a fake JSON-RPC server, which is more than the T-07 entry said. It is still run against a real Anvil only in T-09.
+
+## 2026-11-08: SPEC §4.3 reconciled with T-08
+
+Request: reconcile SPEC §4.3 with the decisions taken and the behavior built in T-08, before starting T-09.
+
+Summary: `docs/SPEC.md` §4.3 now states what the API does. `GET /escrows` documents the `{ items, nextCursor }` body (each item as in `GET /escrows/:id`, `nextCursor` null on the last page), that addresses are accepted in any letter case, and that an invalid `limit` is a 400 and is not clamped; an empty or repeated parameter is also invalid. `/health` documents that it always answers 200, which fields are null when the RPC is unreachable, and the empty-database case (`lastIndexedBlock: null`, lag from `startBlock - 1`). A closing line says `GET /escrows` and `GET /escrows/:id` return 503 when the RPC is unreachable. The three T-08 notes in `docs/TASKS.md` that said "SPEC not edited" now say they were reconciled, and a fourth records the 503 and the always-200 health. This resolves the first decision to review in the T-08 entry above. Only §4.3 changed; the rest of the spec is as before.
+
+Decisions to review:
+
+* The 503 rule and the always-200 `/health` were my choices while implementing, not answers from the developer. They are in the spec now because the developer asked for the reconciliation; they can still be changed.
+* The spec now describes the behavior of the code, so a later change to either has to change both.
