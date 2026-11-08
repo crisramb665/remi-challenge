@@ -93,3 +93,21 @@ Decisions to review:
 * The balance check subtracts `before` from `after` with checked arithmetic. A token whose balance falls during the transfer would revert with a panic instead of `UnsupportedToken`. Only a malicious token can do that and it only affects its own escrow, so it was left as is.
 * `MockFeeOnTransferERC20` is reused by T-04.
 * `test_DirectTransferDoesNotAffectEscrow` is deferred to T-03 because it needs `confirm`.
+
+## 2026-11-07: T-03 resolution functions done, tests split
+
+Request: implement T-03, then split the growing test contract into smaller, specifically named test contracts.
+
+Summary:
+
+* `cancel`, `confirm`, `reject` and `reclaimExpired` follow the SPEC §2.3 table. The shared checks live in two private helpers: `_pending` (`EscrowNotFound`, then `NotPending`) and `_pendingForBeneficiary` (adds `NotBeneficiary`, then `TtlElapsed`). Each function writes the status and emits its event before the `safeTransfer`, and is `nonReentrant` (OZ).
+* Tests are split by concern under `contracts/test/`, sharing the abstract `utils/EscrowFixture.sol`: `EscrowViewsAndConstants` (4), `CreateEscrow` (15), `CancelEscrow` (9), `ConfirmEscrow` (7), `RejectEscrow` (7), `ReclaimExpiredEscrow` (5), `ResolvedEscrowFinality` (4), `DirectTokenTransfer` (1).
+* Covered: happy paths with events, boundaries at `D - 1`, `D`, `E - 1` and `E`, the error order for every function, finality after each resolution, and `test_DirectTransferDoesNotAffectEscrow` (SPEC §2.6, §2.9).
+* The developer ran `forge fmt`, `forge build` and `forge test -vvv`: 52 tests pass.
+
+Decisions to review:
+
+* The private helpers `_pending` and `_pendingForBeneficiary` are small abstractions added to avoid repeating the check order four times.
+* The `EscrowCancelled`, `EscrowReleased`, `EscrowRejected` and `EscrowExpired` events are emitted before the token transfer to keep checks-effects-interactions strict. Event order relative to the `Transfer` event is therefore events first, then the token's `Transfer`.
+* `EscrowManager.t.sol` was removed and split. Test names were kept unchanged.
+* At the developer's explicit permission for that one step, the assistant ran the file renames itself.

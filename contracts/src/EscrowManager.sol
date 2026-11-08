@@ -146,6 +146,56 @@ contract EscrowManager is ReentrancyGuard {
         emit EscrowCreated(id, msg.sender, beneficiary, token, amount, cancelDeadline, expiresAt);
     }
 
+    /// @notice Cancels a pending escrow and refunds the sender.
+    /// @dev Only the sender, strictly before `createdAt + CANCEL_WINDOW`.
+    /// @param id Escrow id.
+    function cancel(uint256 id) external nonReentrant {
+        Escrow storage e = _pending(id);
+        if (msg.sender != e.sender) revert NotSender(id);
+        uint256 cancelDeadline = e.createdAt + CANCEL_WINDOW;
+        if (block.timestamp >= cancelDeadline) revert CancelWindowClosed(id, cancelDeadline);
+
+        e.status = Status.CancelledBySender;
+        emit EscrowCancelled(id);
+        IERC20(e.token).safeTransfer(e.sender, e.amount);
+    }
+
+    /// @notice Releases a pending escrow to the beneficiary.
+    /// @dev Only the beneficiary, strictly before `createdAt + TTL`. Allowed during the cancel window.
+    /// @param id Escrow id.
+    function confirm(uint256 id) external nonReentrant {
+        Escrow storage e = _pendingForBeneficiary(id);
+
+        e.status = Status.Released;
+        emit EscrowReleased(id);
+        IERC20(e.token).safeTransfer(e.beneficiary, e.amount);
+    }
+
+    /// @notice Rejects a pending escrow and refunds the sender.
+    /// @dev Only the beneficiary, strictly before `createdAt + TTL`. Allowed during the cancel window.
+    /// @param id Escrow id.
+    function reject(uint256 id) external nonReentrant {
+        Escrow storage e = _pendingForBeneficiary(id);
+
+        e.status = Status.Rejected;
+        emit EscrowRejected(id);
+        IERC20(e.token).safeTransfer(e.sender, e.amount);
+    }
+
+    /// @notice Refunds the sender of an escrow that reached its expiry time.
+    /// @dev Only the sender, from `createdAt + TTL` onwards.
+    /// @param id Escrow id.
+    function reclaimExpired(uint256 id) external nonReentrant {
+        Escrow storage e = _pending(id);
+        if (msg.sender != e.sender) revert NotSender(id);
+        uint256 expiresAt = e.createdAt + TTL;
+        if (block.timestamp < expiresAt) revert NotExpiredYet(id, expiresAt);
+
+        e.status = Status.Expired;
+        emit EscrowExpired(id);
+        IERC20(e.token).safeTransfer(e.sender, e.amount);
+    }
+
     /// @notice Returns an escrow and its derived deadlines.
     /// @param id Escrow id.
     /// @return escrow Stored fields.
@@ -163,5 +213,20 @@ contract EscrowManager is ReentrancyGuard {
         cancelDeadline = uint64(escrow.createdAt + CANCEL_WINDOW);
         // forge-lint: disable-next-line(unsafe-typecast)
         expiresAt = uint64(escrow.createdAt + TTL);
+    }
+
+    /// @dev Loads an escrow that exists and is `Pending`. Covers the first two checks of every resolution.
+    function _pending(uint256 id) private view returns (Escrow storage e) {
+        e = _escrows[id];
+        if (e.status == Status.None) revert EscrowNotFound(id);
+        if (e.status != Status.Pending) revert NotPending(id, e.status);
+    }
+
+    /// @dev `_pending` plus the beneficiary and TTL checks shared by `confirm` and `reject`.
+    function _pendingForBeneficiary(uint256 id) private view returns (Escrow storage e) {
+        e = _pending(id);
+        if (msg.sender != e.beneficiary) revert NotBeneficiary(id);
+        uint256 expiresAt = e.createdAt + TTL;
+        if (block.timestamp >= expiresAt) revert TtlElapsed(id, expiresAt);
     }
 }

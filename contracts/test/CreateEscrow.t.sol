@@ -1,54 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {Test} from "forge-std/Test.sol";
 import {EscrowManager} from "../src/EscrowManager.sol";
-import {MockERC20} from "./mocks/MockERC20.sol";
+import {EscrowFixture} from "./utils/EscrowFixture.sol";
 import {MockFeeOnTransferERC20} from "./mocks/MockFeeOnTransferERC20.sol";
 
-contract EscrowManagerTest is Test {
-    EscrowManager internal escrow;
-    MockERC20 internal token;
-
-    address internal alice = makeAddr("alice");
-    address internal bob = makeAddr("bob");
+/// @dev `createEscrow`: validation order, token handling, stored state and event.
+contract CreateEscrowTest is EscrowFixture {
     address internal eoa = makeAddr("eoa");
-
-    uint256 internal constant FUNDS = 1_000e18;
-    uint256 internal constant AMOUNT = 100e18;
-
-    function setUp() public {
-        escrow = new EscrowManager();
-        token = new MockERC20();
-        token.mint(alice, FUNDS);
-        vm.prank(alice);
-        token.approve(address(escrow), type(uint256).max);
-    }
-
-    /// @dev Calls `createEscrow` as alice.
-    function _create(address token_, address beneficiary, uint256 amount) internal returns (uint256) {
-        vm.prank(alice);
-        return escrow.createEscrow(token_, beneficiary, amount);
-    }
-
-    function test_Constants() public view {
-        assertEq(escrow.CANCEL_WINDOW(), 2 hours);
-        assertEq(escrow.TTL(), 7 days);
-    }
-
-    function test_NextIdStartsAtOne() public view {
-        assertEq(escrow.nextId(), 1);
-    }
-
-    function test_GetEscrow_RevertsWhenNotFound() public {
-        vm.expectRevert(abi.encodeWithSelector(EscrowManager.EscrowNotFound.selector, 1));
-        escrow.getEscrow(1);
-    }
-
-    function test_GetEscrow_RevertsForIdZero() public {
-        vm.expectRevert(abi.encodeWithSelector(EscrowManager.EscrowNotFound.selector, 0));
-        escrow.getEscrow(0);
-    }
 
     function test_CreateEscrow_StoresEscrowAndMovesFunds() public {
         uint256 id = _create(address(token), bob, AMOUNT);

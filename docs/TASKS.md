@@ -63,7 +63,7 @@ Acceptance:
 
 ### T-03 Resolution functions
 
-Spec: §2.3, §2.4, §2.6, §2.7 · Depends on: T-02 · Status: [ ]
+Spec: §2.3, §2.4, §2.6, §2.7 · Depends on: T-02 · Status: [x]
 
 Scope: `cancel`, `confirm`, `reject`, `reclaimExpired`.
 
