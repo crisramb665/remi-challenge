@@ -81,3 +81,15 @@ Decisions to review:
 * The `InvalidToken` no-code check is an addition to the original spec; §2.4 was updated to describe it.
 * A token that has code but no `balanceOf` still reverts with empty data. Left as is on purpose.
 * T-02 is not ticked yet: `forge fmt`, `forge build` and `forge test` still have to be run by the developer.
+
+## 2026-11-07: T-02 `createEscrow` done
+
+Request: implement T-02 and verify it.
+
+Summary: `createEscrow(token, beneficiary, amount)` validates in the order `ZeroAmount`, `InvalidBeneficiary`, `InvalidToken` (zero address or no code), measures the received amount around OZ `safeTransferFrom` and reverts with `UnsupportedToken` on a mismatch. It stores the escrow as `Pending`, increments `nextId` and emits `EscrowCreated` with both deadlines. It is `nonReentrant` (OZ). Test mocks `MockERC20` and `MockFeeOnTransferERC20` live in `contracts/test/mocks/`. The developer ran `forge fmt`, `forge build` and `forge test`: all 19 tests pass.
+
+Decisions to review:
+
+* The balance check subtracts `before` from `after` with checked arithmetic. A token whose balance falls during the transfer would revert with a panic instead of `UnsupportedToken`. Only a malicious token can do that and it only affects its own escrow, so it was left as is.
+* `MockFeeOnTransferERC20` is reused by T-04.
+* `test_DirectTransferDoesNotAffectEscrow` is deferred to T-03 because it needs `confirm`.

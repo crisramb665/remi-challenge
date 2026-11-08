@@ -114,7 +114,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_CreateEscrow_RevertsWhenTokenIsUndeployedContractAddress() public {
-        address notDeployed = computeCreateAddress(alice, vm.getNonce(alice));
+        address notDeployed = vm.computeCreateAddress(alice, vm.getNonce(alice));
 
         vm.expectRevert(EscrowManager.InvalidToken.selector);
         _create(notDeployed, bob, AMOUNT);
