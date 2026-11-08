@@ -43,7 +43,7 @@ contract EscrowManager is ReentrancyGuard {
     error ZeroAmount();
     /// @notice The beneficiary is the zero address or the sender.
     error InvalidBeneficiary();
-    /// @notice The token is the zero address.
+    /// @notice The token is the zero address or has no code.
     error InvalidToken();
     /// @notice The contract received a different amount than requested.
     error UnsupportedToken();

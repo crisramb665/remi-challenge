@@ -74,6 +74,7 @@ Acceptance:
 * Boundary tests at `D - 1`, `D`, `E - 1`, `E` for every time-dependent action; beneficiary can act during the cancel window.
 * Status written before `safeTransfer`; `nonReentrant` on all of them.
 * Any action on a non-`Pending` escrow reverts with `NotPending`.
+* `test_DirectTransferDoesNotAffectEscrow` (SPEC §2.6, §2.9): a third account sends tokens straight to the contract, the sender creates an escrow for a different amount (no `UnsupportedToken`), the stored and `EscrowCreated` amounts exclude the donation, the beneficiary confirms and receives exactly the escrow amount, and the contract keeps the donated amount afterwards.
 
 ### T-04 Token mocks and invariants
 

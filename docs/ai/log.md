@@ -63,3 +63,21 @@ Decisions to review:
 * The contract is named `EscrowManager`, not `Escrow`. A contract named `Escrow` triggers a shadowing warning with the `struct Escrow` from SPEC §2.2. The spec does not name the contract.
 * `getEscrow` returns `(Escrow memory, uint64 cancelDeadline, uint64 expiresAt)`. The spec does not fix the return shape. `uint64` matches the event. The casts carry `forge-lint` disable comments because `createdAt` is `uint40`, so they cannot truncate.
 * Tests for `getEscrow` on an existing escrow wait for `createEscrow` in T-02.
+
+## 2026-11-07: T-02 progress: no-code token, SPEC §2.4, test refactor, InvalidToken NatSpec
+
+Request: (1) support tests for a token with no code after the developer changed line 120 of `EscrowManager.sol`; (2) update SPEC §2.4; (3) refactor repeated `vm.prank(alice)` in the test file; (4) add `test_DirectTransferDoesNotAffectEscrow` and update the `InvalidToken` NatSpec.
+
+Summary:
+
+* `createEscrow` now reverts with `InvalidToken` for `address(0)` or an address with no code. Four tests cover an EOA, an undeployed contract address and the check order.
+* SPEC §2.4 updated to match the code, at the developer's request.
+* `EscrowManagerTest` uses a `_create` helper plus `AMOUNT` and `eoa` shared values instead of repeating `vm.prank(alice)`.
+* `InvalidToken` NatSpec now reads "The token is the zero address or has no code."
+* `test_DirectTransferDoesNotAffectEscrow` is not written yet. It needs `confirm`, which belongs to T-03, and contract logic was not to change. Agreed with the developer to write it in T-03; it was added to the T-03 acceptance criteria in `docs/TASKS.md`.
+
+Decisions to review:
+
+* The `InvalidToken` no-code check is an addition to the original spec; §2.4 was updated to describe it.
+* A token that has code but no `balanceOf` still reverts with empty data. Left as is on purpose.
+* T-02 is not ticked yet: `forge fmt`, `forge build` and `forge test` still have to be run by the developer.
