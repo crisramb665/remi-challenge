@@ -59,7 +59,7 @@ Once an escrow leaves `Pending` it can never change again.
 
 * `amount == 0` reverts with `ZeroAmount()`
 * `beneficiary == address(0)` or `beneficiary == msg.sender` reverts with `InvalidBeneficiary()`
-* `token == address(0)` reverts with `InvalidToken()`
+* `token == address(0)` or `token` has no code reverts with `InvalidToken()`, so a wrong token address fails with a clear error instead of an empty revert
 * received amount different from `amount` reverts with `UnsupportedToken()`
 
 Resolution functions check in this fixed order, so tests can assert the exact error:

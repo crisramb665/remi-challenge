@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title EscrowManager
 /// @notice Holds many ERC-20 escrows between a sender and a beneficiary.
 contract EscrowManager is ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     /// @notice Lifecycle of an escrow. `None` marks an id that does not exist.
     enum Status {
         None,
@@ -98,6 +102,49 @@ contract EscrowManager is ReentrancyGuard {
     /// @notice Emitted when the sender reclaims an expired escrow.
     /// @param id Escrow id.
     event EscrowExpired(uint256 indexed id);
+
+    /// @notice Locks `amount` of `token` from the caller for `beneficiary`.
+    /// @dev The transfer happens before the state write because the received
+    /// amount must be measured. `nonReentrant` covers that window.
+    /// @param token ERC-20 token to lock.
+    /// @param beneficiary Account that can confirm or reject.
+    /// @param amount Amount to lock. Must be received in full by this contract.
+    /// @return id Id of the new escrow.
+    function createEscrow(address token, address beneficiary, uint256 amount)
+        external
+        nonReentrant
+        returns (uint256 id)
+    {
+        if (amount == 0) revert ZeroAmount();
+        if (beneficiary == address(0) || beneficiary == msg.sender) revert InvalidBeneficiary();
+        if (token == address(0) || token.code.length == 0) revert InvalidToken();
+
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        if (IERC20(token).balanceOf(address(this)) - balanceBefore != amount) {
+            revert UnsupportedToken();
+        }
+
+        id = nextId++;
+        // casting to 'uint40' is safe because block timestamps fit in 40 bits for millennia
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint40 createdAt = uint40(block.timestamp);
+        _escrows[id] = Escrow({
+            sender: msg.sender,
+            createdAt: createdAt,
+            status: Status.Pending,
+            beneficiary: beneficiary,
+            token: token,
+            amount: amount
+        });
+
+        // casting to 'uint64' is safe because createdAt is uint40 and the constants are small
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint64 cancelDeadline = uint64(createdAt + CANCEL_WINDOW);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint64 expiresAt = uint64(createdAt + TTL);
+        emit EscrowCreated(id, msg.sender, beneficiary, token, amount, cancelDeadline, expiresAt);
+    }
 
     /// @notice Returns an escrow and its derived deadlines.
     /// @param id Escrow id.
