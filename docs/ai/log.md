@@ -111,3 +111,23 @@ Decisions to review:
 * The `EscrowCancelled`, `EscrowReleased`, `EscrowRejected` and `EscrowExpired` events are emitted before the token transfer to keep checks-effects-interactions strict. Event order relative to the `Transfer` event is therefore events first, then the token's `Transfer`.
 * `EscrowManager.t.sol` was removed and split. Test names were kept unchanged.
 * At the developer's explicit permission for that one step, the assistant ran the file renames itself.
+
+## 2026-11-07: T-04 token mocks and invariants done
+
+Request: implement T-04, reduce the invariant run size, and add ghost counters so the fuzzing is shown to reach the success paths.
+
+Summary:
+
+* Mocks in `contracts/test/mocks/`: `MockNoReturnERC20` (no `bool` returns) and `MockReentrantERC20` (calls back into a target during a transfer and bubbles up the revert). The fee-on-transfer mock and its `UnsupportedToken` test already existed from T-02.
+* `NoReturnToken.t.sol` (5 tests) runs the whole lifecycle with the no-`bool` token. `ReentrancyProtection.t.sol` (7 tests) shows each of the five state changing functions rejects reentrancy with OZ's `ReentrancyGuardReentrantCall`, including two cross-function cases.
+* `invariant/EscrowHandler.sol` creates and resolves escrows with random actors, amounts and time jumps across two tokens, and records the exact payout and refund of each resolution. `invariant/EscrowInvariants.t.sol` checks I1, I2 and I3 from SPEC §2.9.
+* Coverage: the handler counts successful resolutions per outcome (`resolutionsByStatus`). It picks the legitimate caller and a pending escrow three times out of four, and a third of the time jumps are under an hour, so the 2 hour cancel window is reachable. `invariant/EscrowHandler.t.sol` (6 tests) proves every resolution path, a wrong caller and an already resolved escrow behave as expected.
+* `foundry.toml` sets `[invariant] runs = 64, depth = 100` with the reason in a comment. Foundry's defaults (256 x 500) ran for minutes because every invariant loops over all escrows after every call.
+* The developer ran the full suite: 73 tests pass in about 2.4 seconds.
+
+Decisions to review:
+
+* The invariant size is smaller than Foundry's defaults. A heavier run is available with `FOUNDRY_INVARIANT_RUNS=256 FOUNDRY_INVARIANT_DEPTH=500`; T-10 (CI) should decide whether CI uses it.
+* Foundry resets storage after each run, so the counters cannot give totals across the whole campaign. The deterministic coverage tests are what guarantee reachability; the weighted caller, id and time choices raise how often the fuzzer gets there.
+* `MockNoReturnERC20` is a small hand-written token because OpenZeppelin ships no token without return values. It lives in `test/mocks/` only. The rule against reimplementing OpenZeppelin applies to `src/`.
+* The `ReentrancyGuard` tests rely on OpenZeppelin 5.x `SafeERC20` bubbling up the token's revert data, which `v5.6.1` does.

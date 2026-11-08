@@ -8,4 +8,14 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
 ]
 
+# Invariant tests (test/invariant). Foundry's defaults, 256 runs of depth 500, take minutes here:
+# after every handler call each invariant loops over all the escrows created so far, so the cost
+# grows with the depth. 64 runs of depth 100 finish in seconds and still reach both time windows
+# (the 2 hour cancel window and the 7 day TTL), because every `warp` call moves time by up to 4 days.
+# For a deeper run, override without editing this file:
+#   FOUNDRY_INVARIANT_RUNS=256 FOUNDRY_INVARIANT_DEPTH=500 forge test --match-path "test/invariant/*"
+[invariant]
+runs = 64
+depth = 100
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

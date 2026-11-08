@@ -78,12 +78,14 @@ Acceptance:
 
 ### T-04 Token mocks and invariants
 
-Spec: §2.5, §2.9, §2.10 · Depends on: T-03 · Status: [ ]
+Spec: §2.5, §2.9, §2.10 · Depends on: T-03 · Status: [x]
 
 Acceptance:
 
 * Mocks in `contracts/test/mocks/`: no-`bool` token works end to end; fee-on-transfer reverts with `UnsupportedToken`; reentrant token cannot reenter.
 * Handler-based invariant tests for I1, I2 and I3.
+* The handler counts successful resolutions per outcome, and deterministic tests prove it reaches every resolution path, so the invariants never pass on runs where nothing succeeds.
+* Invariant runs are set in `foundry.toml` to 64 runs of depth 100, with the reason documented there.
 
 ### T-05 Slither, formatting and deploy script
 
