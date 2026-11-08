@@ -108,10 +108,13 @@ Spec: §3.1, §3.3, §3.4 · Depends on: T-05 · Status: [ ]
 
 Acceptance:
 
-* Contract address and `START_BLOCK` are read from the deploy output on the shared volume, never hardcoded (§7, CLAUDE.md).
+* Contract address and start block are read from a JSON file at `DEPLOYMENT_FILE` (default `/shared/deployment.json`) with the shape `{ "address": "0x...", "startBlock": 1 }`, the block already in decimal. They are never hardcoded (§7, CLAUDE.md). The T-09 `deploy` service writes this file.
 * NestJS app boots; config validated for `RPC_URL`, `CONFIRMATIONS`, `BATCH_SIZE`, `POLL_INTERVAL_MS`, `HEALTH_MAX_EXTRA_LAG_BLOCKS` (default `10`), database URL.
-* Migration creates `escrows` and `indexer_state` as in §3.4, with indexes and lowercase addresses.
-* Dependencies: `viem` as the RPC client and `pg` as the Postgres driver. No ORM.
+* A plain `schema.sql` creates `escrows` and `indexer_state` as in §3.4, with indexes and lowercase addresses. It uses `IF NOT EXISTS` and is applied at startup with `pg`, so running it twice is safe. No migration library and no extra tables.
+* Config validation is a small hand-written function with unit tests, not `@nestjs/config`, `joi` or `class-validator`.
+* Package manager: `pnpm` (developer's choice). The lockfile is `pnpm-lock.yaml`.
+* Dependencies: the NestJS scaffold, `viem` as the RPC client and `pg` as the Postgres driver (plus `@types/pg`). No ORM.
+* The schema test runs against a Postgres container.
 
 ### T-07 Ingestion and projection
 
@@ -152,7 +155,7 @@ Spec: §7 · Depends on: T-08 · Status: [ ]
 
 Acceptance:
 
-* Root `docker-compose.yml` with services `anvil`, `deploy`, `postgres` and `api`. `deploy` writes the contract address and deploy block to a shared volume; `api` starts after `deploy` completes.
+* Root `docker-compose.yml` with services `anvil`, `deploy`, `postgres` and `api`. `deploy` writes the contract address and deploy block to a shared volume as the JSON file `{ "address": "0x...", "startBlock": 1 }` (block in decimal, converted from forge's hex receipt value); `api` reads it from `DEPLOYMENT_FILE` and starts after `deploy` completes.
 * Root e2e script runs against a fresh stack, creates escrows and covers confirm, reject, cancel and expire, asserting API responses.
 * Only Anvil default test accounts are used.
 * Time moves with `evm_increaseTime` followed by `evm_mine`.
@@ -182,6 +185,7 @@ Answered by the developer on 2026-11-07 and reconciled into `docs/SPEC.md` (§2.
 * T-08: an invalid `cursor` returns `400`.
 * T-08: `degraded` when `lagBlocks > CONFIRMATIONS + HEALTH_MAX_EXTRA_LAG_BLOCKS`, default `10`.
 * T-09: Docker Compose and the e2e script are defined in SPEC §7; CLAUDE.md adds the conventions.
+* T-06: the schema is a plain idempotent SQL file applied with `pg`, and the deploy output is a JSON file at `DEPLOYMENT_FILE`. Both answered by the developer on 2026-11-07. The T-09 `deploy` service must write that JSON file.
 
 ## Open questions
 
