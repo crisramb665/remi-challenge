@@ -50,6 +50,21 @@ cd contracts && make deploy-info  # address and deploy block of the last local d
 
 When a Makefile target changes, update this list in the same task.
 
+API and full stack, from the repository root:
+
+```
+pnpm --dir api format                 # prettier
+pnpm --dir api lint                   # oxlint
+pnpm --dir api build                  # nest build
+pnpm --dir api test                   # unit tests
+pnpm --dir api test:e2e               # HTTP tests with the whole app and a fake node
+docker compose up -d --build --wait   # anvil, postgres, deploy and api
+bash e2e.sh                           # end to end against that stack, which must be fresh
+docker compose down -v                # remove the stack and its volume, needed before each e2e.sh run
+```
+
+The database tests need a Postgres and `TEST_DATABASE_URL`, for example `postgres://postgres:postgres@localhost:5432/escrow` against `docker run --rm --name escrow-test-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=escrow -p 5432:5432 -d postgres:16-alpine`. Without it they are skipped with a warning. `docs/manual-test.md` describes the manual walkthrough and `docs/postman/` holds the Postman collection.
+
 ## Docker and end to end
 
 * Behavior is defined in SPEC §7. This section only covers conventions.

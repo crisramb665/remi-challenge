@@ -254,3 +254,31 @@ Decisions to review:
 
 * The 503 rule and the always-200 `/health` were my choices while implementing, not answers from the developer. They are in the spec now because the developer asked for the reconciliation; they can still be changed.
 * The spec now describes the behavior of the code, so a later change to either has to change both.
+
+## 2026-11-09: T-09 Docker Compose and end-to-end script
+
+Request: root `docker-compose.yml` with `anvil`, `deploy`, `postgres` and `api`, plus an end-to-end script (SPEC §7), working one step at a time with the developer running the commands. The developer asked whether so many tests were excessive for a challenge (see decisions), chose a bash script, and asked to test locally before Docker.
+
+Summary:
+
+* `contracts/deploy.sh`: runs the existing `forge script`, reads forge's broadcast file with `jq -e`, converts the hex deploy block to decimal and writes `{ "address", "startBlock" }` to `DEPLOYMENT_FILE` through a temporary file and a rename. Runs on the host and in the container. Checked by hand against a local Anvil first.
+* `contracts/Dockerfile` and `.dockerignore`: the `deploy` image, Foundry `v1.5.1` plus `jq`, compiled at build time. The Foundry image is Ubuntu based and runs as the user `foundry`; my first version assumed Alpine (`apk`) and failed, and the image was inspected before the fix.
+* `api/Dockerfile` and `.dockerignore`: two-stage build on `node:26-alpine`, pnpm 12.15.0 installed with npm (Node 25 and later ship no corepack), production dependencies only, runs as `node`.
+* `docker-compose.yml`: Anvil in memory and Postgres on tmpfs, so every `up` is a fresh stack. `deploy` runs once and writes `/shared/deployment.json`; `api` starts after Anvil and Postgres are healthy and `deploy` has completed, and has a `/health` healthcheck. Postgres is not published to the host.
+* `e2e.sh` (bash 3.2 compatible, needs `forge`, `cast`, `jq`, `curl`): checks the stack is fresh, deploys `MockERC20`, creates four escrows, runs confirm, reject, cancel and expire (time moved with `evm_increaseTime` and `evm_mine`), mines `CONFIRMATIONS` blocks and waits for `/health` `lastIndexedBlock` to reach each transaction's block, and asserts fields, flags, filters, pagination, 404 and 400 responses and token balances. It stops at the first failed check with exit code 1. Without `DEPLOYMENT_FILE` it copies the file out of the `deploy` container.
+* Documentation: `docs/manual-test.md` (scenarios, procedure and expected results), `docs/postman/escrow-api.postman_collection.json` (25 requests with tests, including Anvil JSON-RPC for blocks and time), and the Commands section of `CLAUDE.md` now lists the API and Docker commands.
+* Tasks: added T-11 (architecture document) and a test-review item in T-10 at the developer's request.
+
+Verification: `docker compose up -d --build --wait` brought the stack up (`anvil`, `postgres`, `api` healthy, `deploy` exited with 0). `bash e2e.sh` on a fresh stack printed `ok` for every check and `All checks passed`. Running it again on the used stack failed at the first assertion with `FAILED: the stack is fresh (no escrows yet) (expected '', got '4,3,2,1')` and exit code 1, which shows the nonzero exit. The developer also ran the manual scenarios with curl and Postman and reported them done; no outputs were kept, so `docs/manual-test.md` states expected results and does not claim a result per scenario. This was the first run of the API against a real node, and it needed no code changes in `api/`.
+
+Decisions to review:
+
+* The test suite is large for a challenge (about 360 tests). It was agreed to trim only duplicated coverage in T-10 and not add tests for Docker files, since `e2e.sh` is their test.
+* Images are pinned: Foundry `v1.5.1` (the version used locally), `postgres:16-alpine`, `node:26-alpine`. `node:26-alpine` has no digest pin.
+* Postgres on tmpfs and Anvil in memory mean nothing survives `docker compose down`. The `shared` volume is rewritten by every deploy.
+* The `deploy` container runs as the unprivileged `foundry` user; `/shared` is created in the image with that owner so the new volume is writable. The API container mounts it read-only.
+* `CONFIRMATIONS` is 2 in compose and `e2e.sh` mines that many blocks after each batch; both must stay equal.
+* Database credentials in compose are public local defaults. Only Anvil's default accounts are used.
+* The API restart and node-down scenarios are manual (17 and 18 in `docs/manual-test.md`); `e2e.sh` does not cover them.
+* Real-network differences (Sepolia: signing, block time, `CONFIRMATIONS`, the provider's `getLogs` range, the 2 hour and 7 day constants) are only described in `docs/manual-test.md`; nothing was changed for them.
+* `e2e.sh` is not executable; the documented command is `bash e2e.sh`.

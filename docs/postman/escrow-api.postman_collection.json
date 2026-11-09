@@ -1,0 +1,317 @@
+{
+  "info": {
+    "name": "Escrow API (manual tests)",
+    "description": "Requests for the manual walkthrough of the stack started with `docker compose up -d --build --wait`. Transactions are sent from a terminal with `cast`; everything else is here.\n\nCollection variables: baseUrl (API), rpcUrl (Anvil), alice and bob (Anvil's accounts 0 and 1, public test accounts), escrowId (used by 'Escrow by id').",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:3000" },
+    { "key": "rpcUrl", "value": "http://127.0.0.1:8545" },
+    { "key": "alice", "value": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" },
+    { "key": "bob", "value": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" },
+    { "key": "escrowId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "1 Anvil (JSON-RPC)",
+      "item": [
+        {
+          "name": "Block number",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_blockNumber\",\"params\":[]}", "options": { "raw": { "language": "json" } } },
+            "url": "{{rpcUrl}}",
+            "description": "The latest block, in hex. After the confirmation blocks are mined, /health lastIndexedBlock should be this number minus 2."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 and a hex block number', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().result).to.match(/^0x[0-9a-f]+$/);",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Mine one block",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"evm_mine\",\"params\":[]}", "options": { "raw": { "language": "json" } } },
+            "url": "{{rpcUrl}}",
+            "description": "The indexer only reads blocks with CONFIRMATIONS (2) confirmations. After sending transactions, send this request twice, then wait about 2 seconds."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 and no error', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().error).to.be.undefined;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Advance time 7 days + 1 hour",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"evm_increaseTime\",\"params\":[608400]}", "options": { "raw": { "language": "json" } } },
+            "url": "{{rpcUrl}}",
+            "description": "Moves the node's clock past the 7 day TTL. It only takes effect in the next block, so send 'Mine one block' right after."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 and no error', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().error).to.be.undefined;",
+            "});"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "2 Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "description": "Expected: status ok, chainId 31337, lagBlocks 2 once the indexer is caught up. lastIndexedBlock is null until the first range is indexed. With Anvil stopped: 200 with status degraded and nulls."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, ok, chain 31337', () => {",
+            "  pm.response.to.have.status(200);",
+            "  const body = pm.response.json();",
+            "  pm.expect(body.status).to.eql('ok');",
+            "  pm.expect(body.chainId).to.eql(31337);",
+            "});"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "3 Escrows",
+      "item": [
+        {
+          "name": "Escrow by id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows/{{escrowId}}",
+            "description": "Change the collection variable escrowId (1 to 4).\n\nAfter creating the four escrows: Pending, canCancel/canConfirm/canReject true, canReclaim false, transactions.resolved null.\nAfter confirm, reject and cancel: 1 Released, 2 Rejected, 3 CancelledBySender, every can* false, resolved set; 4 still Pending.\nAfter the time jump: 4 has effectiveStatus PendingExpired and only canReclaim true.\nAfter reclaim: 4 Expired."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 and the requested escrow', () => {",
+            "  pm.response.to.have.status(200);",
+            "  const body = pm.response.json();",
+            "  pm.expect(body.id).to.eql(pm.collectionVariables.get('escrowId'));",
+            "  pm.expect(body).to.have.all.keys('id','sender','beneficiary','token','amount','cancelDeadline','expiresAt','status','effectiveStatus','canCancel','canConfirm','canReject','canReclaim','transactions');",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "List, newest first",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows",
+            "description": "Expected with four escrows: items ids 4, 3, 2, 1 and nextCursor null."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, a list, newest first', () => {",
+            "  pm.response.to.have.status(200);",
+            "  const body = pm.response.json();",
+            "  pm.expect(body.items).to.be.an('array');",
+            "  pm.expect(body).to.have.property('nextCursor');",
+            "  const ids = body.items.map((item) => Number(item.id));",
+            "  pm.expect(ids.every((id, i) => i === 0 || ids[i - 1] > id)).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "List by sender (Alice), Pending",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows?sender={{alice}}&status=Pending",
+            "description": "Addresses work in any letter case. With four fresh escrows: 4 items."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, only Pending escrows of Alice', () => {",
+            "  pm.response.to.have.status(200);",
+            "  const items = pm.response.json().items;",
+            "  pm.expect(items.every((item) => item.sender === pm.collectionVariables.get('alice').toLowerCase())).to.be.true;",
+            "  pm.expect(items.every((item) => item.effectiveStatus === 'Pending')).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "List by beneficiary (Bob)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows?beneficiary={{bob}}",
+            "description": "Expected with four escrows: 4 items."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, all addressed to Bob', () => {",
+            "  pm.response.to.have.status(200);",
+            "  const items = pm.response.json().items;",
+            "  pm.expect(items.every((item) => item.beneficiary === pm.collectionVariables.get('bob').toLowerCase())).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "List sent by Bob (empty)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows?sender={{bob}}",
+            "description": "Bob sent nothing: items [] and nextCursor null."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 and empty', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json()).to.eql({ items: [], nextCursor: null });",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Status Pending",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows?status=Pending",
+            "description": "Filters on the effective status: after the time jump an expired escrow is no longer listed here."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, only effectiveStatus Pending', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().items.every((item) => item.effectiveStatus === 'Pending')).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Status PendingExpired",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows?status=PendingExpired",
+            "description": "Empty until the time jump. Then: escrow 4 only (status stays Pending onchain, effectiveStatus is PendingExpired)."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, only PendingExpired', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().items.every((item) => item.effectiveStatus === 'PendingExpired' && item.status === 'Pending')).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Status Released",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?status=Released", "description": "After confirm: escrow 1." },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, only Released', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().items.every((item) => item.status === 'Released')).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Status Rejected",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?status=Rejected", "description": "After reject: escrow 2." },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, only Rejected', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().items.every((item) => item.status === 'Rejected')).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Status CancelledBySender",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?status=CancelledBySender", "description": "After cancel: escrow 3." },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, only CancelledBySender', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().items.every((item) => item.status === 'CancelledBySender')).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Status Expired",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?status=Expired", "description": "After reclaimExpired: escrow 4." },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, only Expired', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().items.every((item) => item.status === 'Expired')).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Page 1 (limit 2)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows?limit=2",
+            "description": "With four escrows: ids 4 and 3, nextCursor \"3\"."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, two items and a nextCursor', () => {",
+            "  pm.response.to.have.status(200);",
+            "  const body = pm.response.json();",
+            "  pm.expect(body.items).to.have.lengthOf(2);",
+            "  pm.expect(body.nextCursor).to.eql(body.items[1].id);",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Page 2 (limit 2, cursor 3)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/escrows?limit=2&cursor=3",
+            "description": "With four escrows: ids 2 and 1, nextCursor null (last page)."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200, ids below the cursor', () => {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().items.every((item) => Number(item.id) < 3)).to.be.true;",
+            "});"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "4 Errors",
+      "item": [
+        {
+          "name": "Unknown id (404)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows/999999" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('404', () => pm.response.to.have.status(404));"] } }]
+        },
+        {
+          "name": "Invalid id (400)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows/abc" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "limit=0 (400)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?limit=0" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "limit=101 (400, not clamped)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?limit=101" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "Invalid cursor (400)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?cursor=abc" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "Invalid status (400)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?status=Frozen" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "Invalid sender (400)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?sender=nope" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "Empty parameter (400)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/escrows?sender=" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400: an empty value is invalid, not \"no filter\"', () => pm.response.to.have.status(400));"] } }]
+        }
+      ]
+    }
+  ]
+}

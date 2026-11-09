@@ -155,7 +155,7 @@ Acceptance:
 
 ### T-09 Docker Compose and end-to-end script
 
-Spec: §7 · Depends on: T-08 · Status: [ ]
+Spec: §7 · Depends on: T-08 · Status: [x]
 
 Acceptance:
 
