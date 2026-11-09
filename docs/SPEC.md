@@ -42,6 +42,7 @@ Let `c = createdAt`, `D = c + CANCEL_WINDOW` and `E = c + TTL`.
 | Function | Caller | Allowed when | Final status | Funds go to |
 | --- | --- | --- | --- | --- |
 | `createEscrow(token, beneficiary, amount)` | anyone, becomes sender | always | `Pending` | contract |
+| `createEscrowWithPermit(token, beneficiary, amount, deadline, v, r, s)` | anyone, becomes sender | always | `Pending` | contract |
 | `cancel(id)` | sender | `now < D` | `CancelledBySender` | sender |
 | `confirm(id)` | beneficiary | `now < E` | `Released` | beneficiary |
 | `reject(id)` | beneficiary | `now < E` | `Rejected` | sender |
@@ -53,6 +54,8 @@ The beneficiary may confirm or reject during the cancel window. If sender and be
 
 Once an escrow leaves `Pending` it can never change again.
 
+`createEscrowWithPermit` is `createEscrow` with the separate `approve` transaction replaced by an EIP-2612 signature of the sender, so creating an escrow takes one transaction instead of two. It creates the same escrow and emits the same event. `deadline`, `v`, `r` and `s` belong to the permit; the escrow's own deadlines are still `D` and `E`. It only works with tokens that implement EIP-2612; for any other token use `createEscrow`.
+
 ### 2.4 Validation and errors
 
 `createEscrow`:
@@ -61,6 +64,12 @@ Once an escrow leaves `Pending` it can never change again.
 * `beneficiary == address(0)` or `beneficiary == msg.sender` reverts with `InvalidBeneficiary()`
 * `token == address(0)` or `token` has no code reverts with `InvalidToken()`, so a wrong token address fails with a clear error instead of an empty revert
 * received amount different from `amount` reverts with `UnsupportedToken()`
+
+`createEscrowWithPermit` runs the same checks, with the permit between the token check and the amount check:
+
+1. `ZeroAmount()`, `InvalidBeneficiary()` and `InvalidToken()` as above, before the token is called
+2. the permit is attempted (see 2.5); if the allowance the caller has given the contract is still below `amount`, it reverts with `PermitFailed()`
+3. received amount different from `amount` reverts with `UnsupportedToken()`
 
 Resolution functions check in this fixed order, so tests can assert the exact error:
 
@@ -75,13 +84,14 @@ Note: the required event is named `EscrowExpired`, so the time errors use differ
 
 * `SafeERC20` for `safeTransferFrom` and `safeTransfer`, which supports tokens that return no `bool`.
 * Deposits measure the balance before and after the transfer. If the difference is not `amount`, the call reverts. Decision: rejecting fee on transfer tokens keeps the event amount equal to the locked amount and keeps invariant I1 exact. Supporting them is listed as an extension.
+* Permit (EIP-2612): `createEscrowWithPermit` calls `permit(msg.sender, address(this), amount, deadline, v, r, s)` inside a `try/catch` and then reads the allowance. Decision: the contract trusts the allowance, not the result of `permit`. Two reasons. Anyone can see the signature in the mempool and submit it first, which makes the sender's own `permit` call revert although the allowance is already set (OpenZeppelin documents this case). And a token that has no `permit` but has a fallback function, such as WETH9, accepts the call and does nothing, so a call that does not revert proves nothing. If the allowance is below `amount` after the attempt, the call reverts with `PermitFailed()`. The signature, the nonce and the deadline are checked by the token; the contract adds no checks of its own. The permit approves exactly `amount`, so no allowance is left over, and an allowance that already covers `amount` is enough whatever the signature, because funds can only move from `msg.sender`.
 * Rebasing tokens are not supported.
 * Tokens with blacklists (USDC, USDT): if the sender gets blacklisted, refund paths revert and funds stay locked until unblocked. Release to the beneficiary still works inside its window. Accepted as a known limitation. An alternative would be letting the sender choose a refund recipient.
 
 ### 2.6 Security
 
 * Checks, effects, interactions: status is written before any outbound transfer.
-* `nonReentrant` on every state changing function. `createEscrow` must transfer before writing state because of the balance check, so the guard is required there and kept everywhere as defense in depth.
+* `nonReentrant` on every state changing function. `createEscrow` and `createEscrowWithPermit` must transfer before writing state because of the balance check, so the guard is required there and kept everywhere as defense in depth. Both external functions call one internal function that holds the deposit logic, so it exists once.
 * No owner, no pause, no upgradeability and no rescue function. Only the parties in the table above can move funds.
 * Tokens sent directly to the contract are not attributed to any escrow and remain locked. A rescue function would contradict the rule that nobody else can move funds.
 * OpenZeppelin is pinned to the latest stable 5.x release tag that has a published audit report.
@@ -106,7 +116,7 @@ event EscrowRejected(uint256 indexed id);
 event EscrowExpired(uint256 indexed id);
 ```
 
-`EscrowCreated` carries every field the API needs. Transition events only need the id because the record already exists. `token` is not indexed because Solidity allows three indexed fields; filtering by token happens in the database.
+`EscrowCreated` carries every field the API needs. Transition events only need the id because the record already exists. `token` is not indexed because Solidity allows three indexed fields; filtering by token happens in the database. `createEscrow` and `createEscrowWithPermit` emit the same event, so the indexer and the API do not change.
 
 ### 2.8 Views
 
@@ -114,7 +124,7 @@ event EscrowExpired(uint256 indexed id);
 
 ### 2.9 Invariants
 
-Tested with Foundry invariant tests through a handler that creates and resolves escrows with random actors, amounts and time jumps.
+Tested with Foundry invariant tests through a handler that creates and resolves escrows with random actors, amounts and time jumps. The handler creates escrows with both create functions, so the invariants also hold for escrows created with a permit.
 
 * I1: for each token, `balanceOf(escrow)` equals the sum of `amount` over `Pending` escrows. It is an equality in tests because the handler never donates; in general it is `>=`.
 * I2: an escrow outside `Pending` never changes status.
@@ -125,7 +135,8 @@ Tested with Foundry invariant tests through a handler that creates and resolves 
 * Happy path for every action.
 * Every revert, asserting selector and arguments.
 * Time boundaries at `D - 1`, `D`, `E - 1` and `E` for every time dependent action.
-* Mock tokens: no `bool` return, fee on transfer (expect revert) and reentrant token.
+* Mock tokens: no `bool` return, fee on transfer (expect revert), reentrant token, a token with `permit` and a token with a fallback function that does not implement it.
+* Permit: a valid signature, an expired deadline, a wrong signer, a replayed signature, a signature submitted first by a third party, a token without `permit`, the fallback token, an existing allowance without a valid signature, and the same validation order as `createEscrow`.
 * Slither run with each finding triaged in `docs/slither.md`.
 
 ## 3. Indexer
@@ -260,7 +271,6 @@ Data lags the chain by at least `CONFIRMATIONS` blocks. The API can show `Pendin
 
 ## 6. Out of scope, possible extensions
 
-* Permit (EIP-2612) creation.
 * Webhooks on state changes.
 * Fee on transfer support recording the received amount.
 * Reorg rollback with block hash tracking.

@@ -34,6 +34,7 @@ Cross-cutting rules live in CLAUDE.md and SPEC §2.6.
 | §5 Assumptions, §6 Out of scope | T-10 (README) |
 | §7 Deliverables | T-05, T-09, T-10 |
 | Architecture document (not in the spec) | T-11 |
+| §2.3 to §2.6, §2.9, §2.10: permit creation | T-12 |
 
 ---
 
@@ -170,11 +171,11 @@ Acceptance:
 
 ### T-10 CI and README
 
-Spec: §5, §6, §7 · Depends on: T-09 · Status: [ ]
+Spec: §5, §6, §7 · Depends on: T-09 · Status: [x]
 
 Acceptance:
 
-* CI runs contract tests, API tests, `forge fmt --check` and linters.
+* CI runs contract tests, API tests, `forge fmt --check` and linters. At the developer's request it also runs Slither, with the two accepted detectors excluded (see `docs/slither.md`). The Docker stack, `e2e.sh` and `make test-deep` are not part of CI.
 * README covers setup, test commands, curl examples, design decisions, assumptions and future work.
 * `docs/slither.md` and `docs/ai/` are complete.
 * Test review (developer's request, 2026-11-08): a separate pass removes duplicated coverage only, so each requirement is tested once. The contract tests and invariants, and the projection and indexer tests, stay. Everything is re-run afterwards and the removed tests are listed in `docs/ai/log.md`.
@@ -194,6 +195,26 @@ Acceptance:
 * Request flow for `GET /escrows` (database read, latest block timestamp as `now`, derived fields) and for `GET /health`.
 * A short written explanation of the guarantees (idempotency, atomicity, ordering), how time is handled, and what is deliberately not done (deep reorgs, backoff, raw event table), each point tied to the file that implements it.
 * Every file path, name and rule in the document is checked against the repository before the task is closed.
+
+### T-12 Permit creation (EIP-2612)
+
+Spec: §2.3, §2.4, §2.5, §2.6, §2.9, §2.10 · Depends on: T-10 · Status: [ ]
+
+Scope: an optional feature chosen by the developer on 2026-11-09 and added to the spec. `createEscrowWithPermit` creates an escrow with an EIP-2612 signature instead of a separate `approve` transaction. Only the contract changes; the indexer, the schema and the API stay as they are because the event is the same.
+
+Acceptance:
+
+* `createEscrowWithPermit(token, beneficiary, amount, deadline, v, r, s)` as in §2.3, with NatSpec. It uses OpenZeppelin's `IERC20Permit` as installed; nothing is copied into `src/`.
+* The deposit logic lives in one internal function used by both create functions, each under its own `nonReentrant`. The existing `createEscrow` behaves exactly as before.
+* The checks run in the order of §2.4: `ZeroAmount`, `InvalidBeneficiary` and `InvalidToken` before the token is called, then the permit, then `UnsupportedToken`. New error `PermitFailed()` with NatSpec.
+* The permit is called inside `try/catch` and the allowance is read afterwards; an allowance below `amount` reverts with `PermitFailed()` (§2.5). The permit approves exactly `amount`.
+* `EscrowCreated` is unchanged. `decode.spec.ts` still passes, and nothing in `api/` needs to change.
+* Mocks in `contracts/test/mocks/`: a token with `permit` (OpenZeppelin's `ERC20Permit`) and a token with a permissive fallback function that does not implement `permit`. Signatures are produced with `vm.sign`.
+* Tests for each case in the §2.10 permit item: valid signature, expired deadline, wrong signer, replayed signature, a signature submitted first by a third party, a token without `permit`, the fallback token, an existing allowance without a valid signature, validation order, reentrancy, and a fee-on-transfer token still rejected with `UnsupportedToken`. A test shows the escrow and the event equal those of `createEscrow` for the same inputs.
+* The invariant handler creates escrows with both functions, its counters show the permit path is reached, and I1 to I3 hold.
+* `forge fmt --check` and `forge test` pass. Slither is re-run; any new finding is triaged in `docs/slither.md`, and if it is accepted its detector is added to `--exclude` in `.github/workflows/ci.yml` in the same change.
+* Documentation: the README moves Permit from future work to the feature list and design decisions, `docs/ARCHITECTURE.md` shows the second create path if T-11 is done, `docs/manual-test.md` gets a permit scenario, and `docs/ai/log.md` gets the entry.
+* Optional: an `e2e.sh` scenario that creates an escrow with a permit signature obtained from Anvil (`eth_signTypedData_v4` for a default account), so no key is added to the repository. If that is not possible without a key, the permit path stays covered by the Foundry tests only and the log says so.
 
 ---
 
@@ -215,6 +236,8 @@ Answered by the developer on 2026-11-07 and reconciled into `docs/SPEC.md` (§2.
 * T-08: an out-of-range or non-integer `limit` returns `400` instead of being clamped. Answered by the developer on 2026-11-08 and reconciled into SPEC §4.3.
 * T-08: before the first checkpoint, `/health` shows `lastIndexedBlock: null` and measures the lag from `startBlock - 1`. Answered by the developer on 2026-11-08 and reconciled into SPEC §4.3.
 * T-08: `GET /escrows` and `GET /escrows/:id` return `503` when the RPC is unreachable, and `/health` always answers `200`. Chosen while implementing T-08 and reconciled into SPEC §4.3 at the developer's request.
+
+* T-12: include Permit (EIP-2612) creation, previously listed as out of scope. The developer chose it over fee-on-transfer support on 2026-11-09 because it only adds a path and weakens no existing guarantee. It is reconciled into SPEC §2.3 to §2.6, §2.9, §2.10 and removed from §6. Fee-on-transfer support stays out of scope.
 
 ## Open questions
 

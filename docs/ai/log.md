@@ -307,3 +307,42 @@ Decisions to review:
 * Several removed tests were cheap table rows and the cost of keeping them was small; they went because the same code path stays covered by one or two other rows.
 * Not changed: the contract tests (74), `projection.spec.ts` (18), `indexer.service.spec.ts` (10), `schema.spec.ts`, `deployment.spec.ts`, `app.e2e-spec.ts`.
 * The earlier log entries (T-07, T-08) still quote the test counts from the time they were written.
+
+## 2026-11-09: T-10 CI and README
+
+Request: CI for the contract and API tests, a short README with links, and the test review (logged separately above). The developer asked whether CI was required (SPEC §7 lists it, so yes), chose a minimal setup, then asked to add Slither and to keep the exclusion approach with the reasons written in the document. For the README: "Short README with links".
+
+Summary:
+
+* `.github/workflows/ci.yml` (GitHub Actions, on pushes to `main` and on pull requests) with three jobs. `Contracts`: checkout with submodules, Foundry `v1.5.1`, `forge fmt --check`, `forge build`, `forge test -vvv`. `Slither`: Slither `0.11.6` installed with pip, `slither . --filter-paths "lib/|test/|script/" --exclude incorrect-equality,timestamp --fail-pedantic`. `API`: a `postgres:16-alpine` service, `TEST_DATABASE_URL` set for the whole job so the database tests never skip silently, then pnpm 12.15.0, Node 26, `pnpm install --frozen-lockfile`, `lint`, `build`, `test`, `test:e2e`. The YAML was parsed locally and `forge fmt --check` was run clean.
+* Slither gate checked locally by the developer: with the exclusions `100 detectors, 0 result(s)` and exit code 0; without them `102 detectors, 5 result(s)` and exit code 255. `docs/slither.md` has a new "In CI" section with the reasoning, the alternatives that were rejected, the known blind spot and what to do if it must be closed.
+* `README.md` rewritten and kept short: quick start with Docker Compose and `e2e.sh`, curl examples and the endpoint rules, the API settings, the test commands (with the throwaway Postgres for the database tests), the local contract commands, design decisions with the spec section of each, assumptions, known limitations, future work and an index of the documents. Every relative link was checked to exist and every `make` target is documented.
+* `docs/TASKS.md`: T-10 acceptance notes that CI also runs Slither and does not run the stack, `e2e.sh` or `make test-deep`.
+
+Verification: not everything could be run from here. The workflow itself has not run on GitHub; only its YAML and the commands it calls were checked locally. Those commands match the ones run by hand in this session (`forge fmt --check`, `pnpm lint`, `build`, `test`, `test:e2e`, the Slither command).
+
+Decisions to review:
+
+* Likely first-run failures to look at on the first push: the `version: v1.5.1` input of `foundry-rs/foundry-toolchain` (may expect another form), Node 26 and pnpm 12 availability in `actions/setup-node` and `pnpm/action-setup`, and Slither compiling with the Foundry installed in the same job. Actions are pinned by major version, not by commit SHA.
+* Not in CI: the Docker stack and `e2e.sh`, `make test-deep`, a Prettier check (the project has no check script). They are listed as future work in the README.
+* Slither blind spot: a new `incorrect-equality` (Medium) or `timestamp` (Low) finding elsewhere in the contract would not fail CI. Accepted for a single-file contract and documented in `docs/slither.md`; a baseline check or `slither-disable` comments would close it.
+* The README repeats the commands that are also in `CLAUDE.md`, so both lists must be updated together when a command changes.
+* The README does not link to `docs/ARCHITECTURE.md`, because T-11 has not been done yet. Add the link when it exists.
+
+## 2026-11-09: Permit creation added to the spec (task T-12)
+
+Request: after an analysis of what Permit (EIP-2612) creation and fee-on-transfer support would imply, the developer chose to include Permit, with the change in the spec, a new task and the decision behind it written down. The contract is not changed yet; T-12 is a task for later, like T-11.
+
+Summary: `docs/SPEC.md` now describes `createEscrowWithPermit(token, beneficiary, amount, deadline, v, r, s)`: the new row in the §2.3 table and a paragraph explaining it, its validation order and the new `PermitFailed()` error in §2.4, the decision on how the permit is handled in §2.5, the shared internal deposit function in §2.6, a sentence in §2.7 that the event is the same so the indexer and the API do not change, the handler in §2.9 using both create functions, the new mocks and the permit test cases in §2.10, and Permit removed from §6. `docs/TASKS.md` has T-12 with its acceptance criteria, a traceability row and the resolved decision. Fee-on-transfer support stays out of scope.
+
+The decision (SPEC §2.5): the contract calls `permit` inside `try/catch` and then trusts the allowance, not the call. Anyone can submit the signature first, which makes the sender's own `permit` revert although the allowance is set; and a token without `permit` but with a fallback function (WETH9) accepts the call and does nothing. If the allowance is below `amount` the call reverts with `PermitFailed()`.
+
+Decisions to review:
+
+* It is a separate function, not a change to `createEscrow`, because many tokens have no permit (USDT) or a different one (DAI). The existing function and its guarantees do not change.
+* `PermitFailed()` is a new error chosen so a failed permit gives a clear message, in line with the earlier choice of `InvalidToken` for tokens without code. The alternative was to let the token's own allowance error surface, which varies by token.
+* The permit approves exactly `amount`, and an existing allowance that already covers `amount` is accepted whatever the signature, since funds can only move from `msg.sender`.
+* No change in `api/`, the schema, the indexer ABI or the Postman collection is expected, because the event is unchanged. T-12 checks this instead of assuming it.
+* The README still lists Permit under future work and `docs/slither.md` is unchanged, because nothing is implemented yet. T-12 updates both. A new Slither finding would fail the CI job until it is triaged.
+* The optional `e2e.sh` scenario depends on signing with Anvil's default accounts without putting a key in the repository; T-12 allows leaving it out if that is not possible.
+* `docs/SPEC.md` was edited because the developer asked for it.
