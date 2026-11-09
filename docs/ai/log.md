@@ -282,3 +282,28 @@ Decisions to review:
 * The API restart and node-down scenarios are manual (17 and 18 in `docs/manual-test.md`); `e2e.sh` does not cover them.
 * Real-network differences (Sepolia: signing, block time, `CONFIRMATIONS`, the provider's `getLogs` range, the 2 hour and 7 day constants) are only described in `docs/manual-test.md`; nothing was changed for them.
 * `e2e.sh` is not executable; the documented command is `bash e2e.sh`.
+
+## 2026-11-09: Test review (part of T-10)
+
+Request: the developer found the suite excessive for a challenge (about 360 tests). Agreed rule: a separate pass that removes duplicated coverage only, so each requirement is tested once. The contract tests and invariants, and the projection, indexer service, schema and boot tests stay. The list was shown first and the developer chose to apply all of it.
+
+Result: 359 tests became 281. API unit tests 234 → 185, API e2e tests 51 → 22, contract tests unchanged at 74 (not touched, not re-run in this pass). Verified after the change: `format` and `lint` clean (0 warnings, 0 errors), `test` 185 passed in 12 suites, `test:e2e` 22 passed in 3 suites, `build` clean. The first unit run failed with `ECONNREFUSED 127.0.0.1:5432` because the throwaway test Postgres had stopped; after restarting it the same suite passed, so it was not caused by the removals.
+
+Removed tests:
+
+* `test/escrows.e2e-spec.ts` (38 → 15), 23 removed. `GET /escrows/:id`: the four time-boundary cases (`D - 1`, `D`, `E - 1`, `E`), "shows a resolved escrow with both transactions and no actions", "keeps the amount of a uint256 exact", and five bad-id cases (negative, decimal, hex, leading zero, above uint256). `GET /escrows`: "returns an empty list", "walks through every page with nextCursor", "moves an escrow from Pending to PendingExpired", and nine bad-query cases (beneficiary, lowercase status, zero cursor, limit above 100, limit text, limit decimal, repeated limit, empty sender, empty limit). Kept: the full body, the node clock as `now`, 404, two 400s for ids, four 400s for the list, 503 for both endpoints, newest first with the same shape, default 20 and maximum 100, case-insensitive sender and beneficiary filters, and the effective status filter.
+* `test/health.e2e-spec.ts` (9 → 3), 6 removed: "follows the checkpoint and the head", "reports the chain id", the two threshold cases (lag 12 and 13), "recovers when the node comes back", "degraded before the first checkpoint when far ahead". Kept: the ok example, node down, fresh database.
+* `src/escrows/query.spec.ts`, 34 table rows removed, one or two rows per rule kept: accepted ids `7` and `1000000`; rejected ids plus sign, hex, empty, spaces, exponent and 78 digits; rejected cursors `-3`, empty and `1.0`; rejected addresses empty, `0x` only and with spaces; accepted statuses Released, Rejected and Expired; rejected statuses `Cancelled`, `PENDING` and empty; accepted limit `99`; rejected limits `1000`, `1e2`, ` 5`, `0x10` and `00000`; five of the seven combined-query 400 rows and three of the five empty-value rows.
+* `src/escrows/escrows.repository.spec.ts` (23 → 18), 5 removed: "finds an id as large as a uint256", "accepts a cursor as large as a uint256", "returns nothing for an address with no escrows", "pages within a filter", "a resolved escrow past its expiry is never PendingExpired".
+* `src/health/health.spec.ts` (16 → 13), 3 net: "ok when fully caught up" became a row (lag 0) of the threshold table, "ok at the usual lag" is covered by the other rows, "follows the number of confirmations" and "returns plain numbers" removed.
+* `src/escrows/escrow-view.spec.ts` (16 → 14): "keeps the amount as a decimal string" (pass-through) and "covers every stored status" (compared a constant with itself).
+* `src/indexer/chain-reader.spec.ts` (6 → 4): "reads the block number" and "reads the chain id" (pass-throughs; the latest block, the log request and its decoding, and the failure case stay).
+* `src/indexer/decode.spec.ts` (11 → 10): "returns an empty list when there are no logs". `src/indexer/range.spec.ts` (12 → 11): "a single block when the batch size is 1" (same result as "the only one confirmed").
+* `src/config/config.spec.ts`: "uses 10 extra lag blocks and /shared/deployment.json by default" removed, but not as a pure duplicate. The first test compared the defaults with the constants exported by the code; it now compares with the literal spec values (10 and `/shared/deployment.json`), so changing a constant still fails a test.
+
+Decisions to review:
+
+* The judgment of what is redundant is mine. The rule used: a rule that is tested at the unit level (derived fields, input parsing, SQL, health status) is not tested again over HTTP beyond one check that the pieces are connected. If a bug appears in the wiring between layers, the kept e2e tests are the ones to extend.
+* Several removed tests were cheap table rows and the cost of keeping them was small; they went because the same code path stays covered by one or two other rows.
+* Not changed: the contract tests (74), `projection.spec.ts` (18), `indexer.service.spec.ts` (10), `schema.spec.ts`, `deployment.spec.ts`, `app.e2e-spec.ts`.
+* The earlier log entries (T-07, T-08) still quote the test counts from the time they were written.

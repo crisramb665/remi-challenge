@@ -19,20 +19,9 @@ describe('buildHealth', () => {
     });
   });
 
-  it('is ok when the indexer is fully caught up', () => {
-    expect(
-      buildHealth({ ...base, node: { head: 120n, chainId: 1 } }),
-    ).toMatchObject({ status: 'ok', lagBlocks: 0 });
-  });
-
-  it('is ok at the usual lag of the confirmations', () => {
-    expect(
-      buildHealth({ ...base, node: { head: 122n, chainId: 1 } }),
-    ).toMatchObject({ status: 'ok', lagBlocks: 2 });
-  });
-
   describe('the degraded threshold, confirmations + extra lag (2 + 10)', () => {
     it.each([
+      [0n, 'ok'],
       [11n, 'ok'],
       [12n, 'ok'],
       [13n, 'degraded'],
@@ -51,17 +40,6 @@ describe('buildHealth', () => {
       ).toBe('ok');
       expect(
         buildHealth({ ...strict, node: { head: 123n, chainId: 1 } }).status,
-      ).toBe('degraded');
-    });
-
-    it('follows the number of confirmations', () => {
-      const none = { ...base, confirmations: 0, maxExtraLagBlocks: 0 };
-
-      expect(
-        buildHealth({ ...none, node: { head: 120n, chainId: 1 } }).status,
-      ).toBe('ok');
-      expect(
-        buildHealth({ ...none, node: { head: 121n, chainId: 1 } }).status,
       ).toBe('degraded');
     });
   });
@@ -114,15 +92,6 @@ describe('buildHealth', () => {
         }),
       ).toMatchObject({ status: 'ok', lagBlocks: 6 });
     });
-  });
-
-  it('returns plain numbers, which JSON can carry', () => {
-    const body = buildHealth(base);
-
-    expect(typeof body.lastIndexedBlock).toBe('number');
-    expect(typeof body.chainHead).toBe('number');
-    expect(typeof body.lagBlocks).toBe('number');
-    expect(() => JSON.stringify(body)).not.toThrow();
   });
 
   it('shows a negative lag as it is when the head is behind the checkpoint', () => {

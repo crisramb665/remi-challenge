@@ -19,6 +19,9 @@ interface Seed {
   expiresAt: number;
 }
 
+// The derived fields (src/escrows/escrow-view.spec.ts), the input rules (query.spec.ts) and the SQL
+// (escrows.repository.spec.ts) are tested one by one. These tests only prove what HTTP adds: the
+// response body, the node's clock as `now`, the status codes and that the pieces are connected.
 describeWithDb('GET /escrows', () => {
   let api: ApiApp;
 
@@ -95,30 +98,6 @@ describeWithDb('GET /escrows', () => {
       });
     });
 
-    it.each([
-      [D - 1, 'Pending', true, true, false],
-      [D, 'Pending', false, true, false],
-      [E - 1, 'Pending', false, true, false],
-      [E, 'PendingExpired', false, false, true],
-    ] as const)(
-      'at block time %s it is %s (cancel %s, confirm %s, reclaim %s)',
-      async (timestamp, effectiveStatus, canCancel, canConfirm, canReclaim) => {
-        await seed(1);
-        api.chain.timestamp = BigInt(timestamp);
-
-        const { body } = await get('/escrows/1').expect(200);
-
-        expect(body).toMatchObject({
-          status: 'Pending',
-          effectiveStatus,
-          canCancel,
-          canConfirm,
-          canReject: canConfirm,
-          canReclaim,
-        });
-      },
-    );
-
     it('follows the clock of the node, not the server clock', async () => {
       await seed(1);
 
@@ -131,30 +110,6 @@ describeWithDb('GET /escrows', () => {
       );
     });
 
-    it('shows a resolved escrow with both transactions and no actions', async () => {
-      await seed(1, { status: 'Released' });
-      api.chain.timestamp = 9_999_999_999n;
-
-      const { body } = await get('/escrows/1').expect(200);
-
-      expect(body).toMatchObject({
-        status: 'Released',
-        effectiveStatus: 'Released',
-        canCancel: false,
-        canConfirm: false,
-        canReject: false,
-        canReclaim: false,
-        transactions: { created: CREATED_TX, resolved: RESOLVED_TX },
-      });
-    });
-
-    it('keeps the amount of a uint256 exact', async () => {
-      const max = (2n ** 256n - 1n).toString();
-      await seed(1, { amount: max });
-
-      expect((await get('/escrows/1')).body.amount).toBe(max);
-    });
-
     it('returns 404 for an id that does not exist', async () => {
       await seed(1);
 
@@ -164,11 +119,6 @@ describeWithDb('GET /escrows', () => {
     it.each([
       ['letters', 'abc'],
       ['zero', '0'],
-      ['negative', '-1'],
-      ['decimal', '1.5'],
-      ['hex', '0x1'],
-      ['leading zero', '01'],
-      ['above uint256', (2n ** 256n).toString()],
     ])('returns 400 for an invalid id (%s)', async (_label, id) => {
       await get(`/escrows/${id}`).expect(400);
     });
@@ -182,12 +132,6 @@ describeWithDb('GET /escrows', () => {
   });
 
   describe('list', () => {
-    it('returns an empty list when there are no escrows', async () => {
-      const { body } = await get('/escrows').expect(200);
-
-      expect(body).toEqual({ items: [], nextCursor: null });
-    });
-
     it('returns the newest first, with the same shape as a single escrow', async () => {
       await seed(1);
       await seed(2);
@@ -213,23 +157,6 @@ describeWithDb('GET /escrows', () => {
       expect(all.nextCursor).toBeNull();
     });
 
-    it('walks through every page with nextCursor', async () => {
-      for (let id = 1; id <= 5; id++) await seed(id);
-
-      const first = (await get('/escrows?limit=2').expect(200)).body;
-      const second = (
-        await get(`/escrows?limit=2&cursor=${first.nextCursor}`).expect(200)
-      ).body;
-      const third = (
-        await get(`/escrows?limit=2&cursor=${second.nextCursor}`).expect(200)
-      ).body;
-
-      expect(idsOf(first)).toEqual(['5', '4']);
-      expect(idsOf(second)).toEqual(['3', '2']);
-      expect(idsOf(third)).toEqual(['1']);
-      expect(third.nextCursor).toBeNull();
-    });
-
     it('filters by sender and beneficiary, in any letter case', async () => {
       await seed(1, { sender: ALICE, beneficiary: BOB });
       await seed(2, { sender: BOB, beneficiary: ALICE });
@@ -242,12 +169,6 @@ describeWithDb('GET /escrows', () => {
       expect(
         idsOf((await get(`/escrows?beneficiary=${CAROL}`).expect(200)).body),
       ).toEqual(['3']);
-      expect(
-        idsOf(
-          (await get(`/escrows?sender=${ALICE}&beneficiary=${BOB}`).expect(200))
-            .body,
-        ),
-      ).toEqual(['1']);
     });
 
     it('filters by the effective status, so Pending leaves out PendingExpired', async () => {
@@ -266,33 +187,11 @@ describeWithDb('GET /escrows', () => {
       expect(idsOf(released.body)).toEqual(['3']);
     });
 
-    it('moves an escrow from Pending to PendingExpired when the node time passes the expiry', async () => {
-      await seed(1);
-
-      api.chain.timestamp = BigInt(E - 1);
-      expect(idsOf((await get('/escrows?status=Pending')).body)).toEqual(['1']);
-
-      api.chain.timestamp = BigInt(E);
-      expect(idsOf((await get('/escrows?status=Pending')).body)).toEqual([]);
-      expect(idsOf((await get('/escrows?status=PendingExpired')).body)).toEqual(
-        ['1'],
-      );
-    });
-
     it.each([
       ['sender', 'sender=nope'],
-      ['beneficiary', 'beneficiary=0x123'],
       ['status', 'status=Frozen'],
-      ['lowercase status', 'status=pending'],
       ['cursor', 'cursor=abc'],
-      ['zero cursor', 'cursor=0'],
-      ['limit zero', 'limit=0'],
-      ['limit above 100', 'limit=101'],
-      ['limit text', 'limit=ten'],
-      ['limit decimal', 'limit=2.5'],
-      ['repeated limit', 'limit=1&limit=2'],
-      ['empty sender', 'sender='],
-      ['empty limit', 'limit='],
+      ['limit', 'limit=0'],
     ])('returns 400 for an invalid %s', async (_label, query) => {
       await get(`/escrows?${query}`).expect(400);
     });

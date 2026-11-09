@@ -10,7 +10,6 @@ import { EscrowsRepository } from './escrows.repository';
 const ALICE = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
 const BOB = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8';
 const CAROL = '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc';
-const UINT256_MAX = (2n ** 256n - 1n).toString();
 
 interface Seed {
   sender: string;
@@ -95,12 +94,6 @@ describeWithDb('EscrowsRepository', () => {
 
       expect(await repository.findById('4')).toBeNull();
     });
-
-    it('finds an id as large as a uint256', async () => {
-      await seed(UINT256_MAX);
-
-      expect((await repository.findById(UINT256_MAX))?.id).toBe(UINT256_MAX);
-    });
   });
 
   describe('list ordering and paging', () => {
@@ -144,12 +137,6 @@ describeWithDb('EscrowsRepository', () => {
 
       expect(ids((await list({ cursor: '7' })).rows)).toEqual(['5', '1']);
     });
-
-    it('accepts a cursor as large as a uint256', async () => {
-      await seed(1);
-
-      expect(ids((await list({ cursor: UINT256_MAX })).rows)).toEqual(['1']);
-    });
   });
 
   describe('list filters', () => {
@@ -175,19 +162,6 @@ describeWithDb('EscrowsRepository', () => {
       expect(ids((await list({ sender: ALICE, cursor: '3' })).rows)).toEqual([
         '1',
       ]);
-    });
-
-    it('returns nothing for an address with no escrows', async () => {
-      expect(
-        await list({ sender: '0x0000000000000000000000000000000000000001' }),
-      ).toEqual({ rows: [], nextCursor: null });
-    });
-
-    it('pages within a filter', async () => {
-      const page = await list({ sender: ALICE, limit: 1 });
-
-      expect(ids(page.rows)).toEqual(['3']);
-      expect(page.nextCursor).toBe('3');
     });
   });
 
@@ -243,12 +217,6 @@ describeWithDb('EscrowsRepository', () => {
       for (const now of [0n, 5000n, 99999n]) {
         expect(ids((await list({ status, now })).rows)).toEqual(expected);
       }
-    });
-
-    it('a resolved escrow past its expiry is never PendingExpired', async () => {
-      expect(
-        ids((await list({ status: 'PendingExpired', now: 99999n })).rows),
-      ).not.toContain('3');
     });
 
     it('combines the status with the other filters', async () => {

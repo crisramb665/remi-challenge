@@ -1,9 +1,4 @@
-import {
-  ConfigError,
-  DEFAULT_DEPLOYMENT_FILE,
-  DEFAULT_HEALTH_MAX_EXTRA_LAG_BLOCKS,
-  loadConfig,
-} from './config';
+import { ConfigError, loadConfig } from './config';
 
 const valid = {
   RPC_URL: 'http://127.0.0.1:8545',
@@ -21,15 +16,11 @@ describe('loadConfig', () => {
       confirmations: 2,
       batchSize: 500,
       pollIntervalMs: 1000,
-      healthMaxExtraLagBlocks: DEFAULT_HEALTH_MAX_EXTRA_LAG_BLOCKS,
-      deploymentFile: DEFAULT_DEPLOYMENT_FILE,
+      // The defaults are written out on purpose: they are the values in SPEC section 4.3 and
+      // section 7, so changing the constants in config.ts must fail this test.
+      healthMaxExtraLagBlocks: 10,
+      deploymentFile: '/shared/deployment.json',
     });
-  });
-
-  it('uses 10 extra lag blocks and /shared/deployment.json by default', () => {
-    const config = loadConfig(valid);
-    expect(config.healthMaxExtraLagBlocks).toBe(10);
-    expect(config.deploymentFile).toBe('/shared/deployment.json');
   });
 
   it('accepts overrides for the optional settings', () => {

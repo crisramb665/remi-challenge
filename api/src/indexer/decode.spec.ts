@@ -146,10 +146,6 @@ describe('toEscrowEvents with hand-made logs', () => {
     expect(events.map((event) => event.id)).toEqual([2n, 1n]);
   });
 
-  it('returns an empty list when there are no logs', () => {
-    expect(toEscrowEvents([])).toEqual([]);
-  });
-
   it('rejects a log without a block position', () => {
     expect(() =>
       toEscrowEvents([

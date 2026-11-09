@@ -63,22 +63,6 @@ describe('createViemChainReader', () => {
     rpc = null;
   });
 
-  it('reads the block number', async () => {
-    rpc = await startRpc({ eth_blockNumber: () => '0x2a' });
-
-    const reader = createViemChainReader(rpc.url, CONTRACT);
-
-    expect(await reader.getBlockNumber()).toBe(42n);
-  });
-
-  it('reads the chain id', async () => {
-    rpc = await startRpc({ eth_chainId: () => '0x7a69' });
-
-    const reader = createViemChainReader(rpc.url, CONTRACT);
-
-    expect(await reader.getChainId()).toBe(31337);
-  });
-
   it('reads the number and timestamp of the latest block', async () => {
     rpc = await startRpc({
       eth_getBlockByNumber: () => ({

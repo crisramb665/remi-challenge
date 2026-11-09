@@ -1,9 +1,4 @@
-import {
-  EscrowRow,
-  STORED_STATUSES,
-  StoredStatus,
-  toEscrowView,
-} from './escrow-view';
+import { EscrowRow, STORED_STATUSES, toEscrowView } from './escrow-view';
 
 const D = 1_000n; // cancel deadline
 const E = 5_000n; // expiry
@@ -75,10 +70,6 @@ describe('toEscrowView', () => {
   });
 
   describe('fields', () => {
-    it('keeps the amount as a decimal string without losing precision', () => {
-      expect(toEscrowView(row(), 1n).amount).toBe(row().amount);
-    });
-
     it('returns deadlines as numbers and ids as strings', () => {
       const view = toEscrowView(row(), 1n);
 
@@ -107,18 +98,6 @@ describe('toEscrowView', () => {
       expect(() => toEscrowView(row({ status: 'Frozen' }), 1n)).toThrow(
         'unknown status: Frozen',
       );
-    });
-
-    it('covers every stored status', () => {
-      const statuses: StoredStatus[] = [...STORED_STATUSES];
-
-      expect(statuses).toEqual([
-        'Pending',
-        'Released',
-        'Rejected',
-        'CancelledBySender',
-        'Expired',
-      ]);
     });
   });
 });

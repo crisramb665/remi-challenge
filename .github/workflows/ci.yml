@@ -1,6 +1,6 @@
-# CI (SPEC section 7): contract tests, API tests, `forge fmt --check` and the linter.
-# The commands are the ones in CLAUDE.md. The Docker stack, e2e.sh, the deep invariant run
-# (`make test-deep`) and Slither are not run here, see the README for how to run them.
+# CI (SPEC section 7): contract tests, API tests, `forge fmt --check` and the linter, plus Slither.
+# The commands are the ones in CLAUDE.md. The Docker stack, e2e.sh and the deep invariant run
+# (`make test-deep`) are not run here, see the README for how to run them.
 
 name: CI
 
@@ -43,6 +43,39 @@ jobs:
 
       - name: Tests
         run: forge test -vvv
+
+  slither:
+    name: Slither
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Slither compiles the project with forge.
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The version the findings in docs/slither.md were triaged with.
+      - name: Install Slither
+        run: pip install slither-analyzer==0.11.6
+
+      # Same scope as `make slither`. The two detectors left out are the ones triaged as accepted or
+      # false positives in docs/slither.md; any finding from another detector fails the job.
+      - name: Slither
+        run: >-
+          slither .
+          --filter-paths "lib/|test/|script/"
+          --exclude incorrect-equality,timestamp
+          --fail-pedantic
 
   api:
     name: API

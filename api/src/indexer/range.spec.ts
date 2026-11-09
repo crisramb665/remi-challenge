@@ -37,13 +37,6 @@ describe('computeRange', () => {
     });
   });
 
-  it('returns a single block when the batch size is 1', () => {
-    expect(computeRange({ ...base, batchSize: 1 })).toEqual({
-      from: 51n,
-      to: 51n,
-    });
-  });
-
   it('returns a single block when it is the only one confirmed', () => {
     expect(computeRange({ ...base, head: 53n })).toEqual({
       from: 51n,
