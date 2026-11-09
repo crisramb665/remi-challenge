@@ -25,9 +25,28 @@ e2e.sh               End to end script
 .github/workflows/   CI
 ```
 
+## Install
+
+Requirements:
+
+* Docker with Compose v2: runs the whole stack and the test database.
+* [Foundry](https://book.getfoundry.sh/) 1.5.x (`forge`, `cast`, `anvil`), `jq` and `curl`: contract tests, the deploy script and `e2e.sh`.
+* Node 26 and pnpm 12.15.0: only to run or test the API outside Docker.
+* [Slither](https://github.com/crytic/slither) 0.11.x: optional, for `make slither`.
+
+The contract dependencies (`forge-std` and OpenZeppelin) are git submodules, so clone with them:
+
+```
+git clone --recurse-submodules <repository url>
+cd <repository folder>
+git submodule update --init --recursive   # only if you cloned without --recurse-submodules
+pnpm --dir api install                    # API dependencies
+(cd contracts && forge build)             # compiles the contracts and the libraries
+```
+
 ## Quick start
 
-Requirements: Docker with Compose v2, plus [Foundry](https://book.getfoundry.sh/), `jq` and `curl` for the end to end script. Dependencies in `contracts/lib` are git submodules, so clone with `--recurse-submodules` (or run `git submodule update --init --recursive`).
+With the submodules checked out and Docker running, one command builds the images and starts everything:
 
 ```
 docker compose up -d --build --wait
@@ -40,6 +59,24 @@ Run the end to end script against a **fresh** stack. It creates four escrows and
 ```
 docker compose down -v && docker compose up -d --build --wait && bash e2e.sh
 ```
+
+### Run the API without Docker
+
+For development, run the node and the database in two terminals and the API on your machine:
+
+```
+cd contracts && make anvil                       # terminal 1: local node on port 8545
+```
+
+```
+DEPLOYMENT_FILE=/tmp/escrow-deployment.json sh contracts/deploy.sh    # deploys, writes the address and block
+docker run --rm --name escrow-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=escrow -p 5432:5432 -d postgres:16-alpine
+cp api/.env.example api/.env
+echo 'DEPLOYMENT_FILE=/tmp/escrow-deployment.json' >> api/.env
+pnpm --dir api start                             # API on port 3000, reads api/.env
+```
+
+The settings are explained in [Settings](#settings). Stop the database with `docker stop escrow-db`.
 
 ## API
 
