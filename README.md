@@ -5,7 +5,7 @@ ERC-20 escrow system built for the Remitee Blockchain Engineer challenge. It has
 * A Solidity contract that locks tokens until the beneficiary confirms or rejects, the sender cancels or the escrow expires.
 * A NestJS API that indexes contract events into Postgres and exposes read endpoints.
 
-The full specification is [docs/SPEC.md](docs/SPEC.md) and the task backlog is [docs/TASKS.md](docs/TASKS.md).
+The full specification is [docs/SPEC.md](docs/SPEC.md) and the task backlog is [docs/TASKS.md](docs/TASKS.md). [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) shows how the pieces fit, with diagrams.
 
 ## Stack
 
@@ -168,6 +168,7 @@ Each one has its rationale in the spec; the section is in brackets.
 ## Documentation
 
 * [docs/SPEC.md](docs/SPEC.md): specification, the source of truth.
+* [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): components, escrow lifecycle, indexer round, data model and request flow as diagrams, with the guarantees and the file that keeps each one.
 * [docs/TASKS.md](docs/TASKS.md): task backlog and resolved decisions.
 * [docs/slither.md](docs/slither.md): static analysis findings and how CI runs them.
 * [docs/manual-test.md](docs/manual-test.md): the manual walkthrough with expected results.

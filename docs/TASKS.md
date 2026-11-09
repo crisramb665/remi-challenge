@@ -182,7 +182,7 @@ Acceptance:
 
 ### T-11 Architecture document
 
-Spec: none (requested by the developer, not a §7 deliverable) · Depends on: T-09 · Status: [ ]
+Spec: none (requested by the developer, not a §7 deliverable) · Depends on: T-09 · Status: [x]
 
 Scope: one file, `docs/ARCHITECTURE.md`, with Mermaid diagrams written inside the Markdown so GitHub renders them. No new dependencies and no image files. The README links to it and keeps its own short design-decisions section.
 

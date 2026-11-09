@@ -346,3 +346,18 @@ Decisions to review:
 * The README still lists Permit under future work and `docs/slither.md` is unchanged, because nothing is implemented yet. T-12 updates both. A new Slither finding would fail the CI job until it is triaged.
 * The optional `e2e.sh` scenario depends on signing with Anvil's default accounts without putting a key in the repository; T-12 allows leaving it out if that is not possible.
 * `docs/SPEC.md` was edited because the developer asked for it.
+
+## 2026-11-09: T-11 Architecture document
+
+Request: a document with a flow diagram, a schema diagram and a detailed explanation of how the system works, written after T-09 so it describes the finished API and Docker flow. No pending decisions on T-10 were open.
+
+Summary: `docs/ARCHITECTURE.md`, one file with six Mermaid diagrams (they render on GitHub, no tools or image files): the components of the Docker stack and who reads and writes what; the escrow lifecycle as a state diagram, with a table of what is allowed before `D`, between `D` and `E` and from `E`, and a note that `PendingExpired` is never stored; one round of the indexer as a flowchart (range, `getLogs`, decode, one transaction with the checkpoint, the retry path); the data model as an ER diagram with a table of which event writes which column; and two sequence diagrams for `GET /escrows` and `GET /health`. A table of guarantees (idempotency, atomicity, ordering, confirmed blocks only, restart safety, the pinned ABI, exact amounts, final status, direct transfers), each with the file that keeps it and the test that proves it, short sections on how time is handled and on startup and shutdown order, a list of what is left out on purpose, and a file map. `README.md` links to it from the intro and from its document list, and `docs/TASKS.md` has T-11 ticked.
+
+Verification, checked mechanically against the repository: all 36 paths that start at a root folder exist; every other file name mentioned exists somewhere in the repository; the 6 Markdown links resolve; the 20 code symbols named in the text (`computeRange`, `applyRange`, `compareByPosition`, `statusCondition`, `toEscrowView`, `buildHealth`, `onApplicationShutdown`, and so on) are found in the source; the 3 test names quoted in the guarantees table exist; the diagram fences are balanced. The first check found two paths written without their `api/src/` prefix and bare file names mixed with full paths in the guarantees table; both were fixed. The Mermaid syntax itself could not be rendered here, so the diagrams were written conservatively (quoted labels, no semicolons in sequence messages) and have not been seen rendered.
+
+Decisions to review:
+
+* The diagrams should be opened once on GitHub (or in a Mermaid preview) to confirm they render. A syntax error would show as an error box in place of one diagram, and the fix is a label change.
+* The document describes the code as of today. It says Permit creation is specified and planned as T-12 and is not implemented; T-12 has to update the component, lifecycle and "left out" parts.
+* Paths and names will drift if files move. The check script is not part of the repository; the T-11 acceptance asks only for the check at the time of writing.
+* The guarantees table cites tests by name, so renaming one of the three quoted tests breaks the reference.
