@@ -4,10 +4,13 @@ pragma solidity 0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {EscrowManager} from "../../src/EscrowManager.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {MockPermitERC20} from "../mocks/MockPermitERC20.sol";
+import {PermitDigest} from "../utils/PermitDigest.sol";
 
-/// @dev Fuzzing entry point for the invariant tests. It creates escrows and tries to resolve them with random
-/// actors, amounts and time jumps, and records what each successful resolution paid out. It never sends tokens
-/// to the escrow contract directly, so the contract balance can be compared exactly with the pending amounts.
+/// @dev Fuzzing entry point for the invariant tests. It creates escrows, with `createEscrow` and with
+/// `createEscrowWithPermit`, and tries to resolve them with random actors, amounts and time jumps, and records
+/// what each successful resolution paid out. It never sends tokens to the escrow contract directly, so the
+/// contract balance can be compared exactly with the pending amounts.
 contract EscrowHandler is Test {
     enum Action {
         Cancel,
@@ -21,8 +24,12 @@ contract EscrowHandler is Test {
     EscrowManager public escrow;
     MockERC20 public tokenA;
     MockERC20 public tokenB;
+    /// @dev The token used by the permit creation path.
+    MockPermitERC20 public tokenP;
 
     address[] internal _actors;
+    /// @dev Private key of each actor, in the same order, so the handler can sign permits for them.
+    uint256[] internal _actorKeys;
 
     // Ghost state, filled when the handler itself resolves an escrow.
     mapping(uint256 => bool) public resolved;
@@ -33,14 +40,19 @@ contract EscrowHandler is Test {
     // Successful resolutions per outcome. Failed attempts are caught on purpose, so the fuzzer's own
     // "reverts" column cannot tell whether an action ever succeeded; these counters can.
     mapping(EscrowManager.Status => uint256) public resolutionsByStatus;
+    // Escrows created through `createEscrowWithPermit`, to show the fuzzer reaches that path.
+    uint256 public createdWithPermit;
 
-    constructor(EscrowManager escrow_, MockERC20 tokenA_, MockERC20 tokenB_) {
+    constructor(EscrowManager escrow_, MockERC20 tokenA_, MockERC20 tokenB_, MockPermitERC20 tokenP_) {
         escrow = escrow_;
         tokenA = tokenA_;
         tokenB = tokenB_;
-        _actors.push(makeAddr("actor0"));
-        _actors.push(makeAddr("actor1"));
-        _actors.push(makeAddr("actor2"));
+        tokenP = tokenP_;
+        for (uint256 i = 0; i < 3; i++) {
+            (address actor, uint256 key) = makeAddrAndKey(string.concat("actor", vm.toString(i)));
+            _actors.push(actor);
+            _actorKeys.push(key);
+        }
     }
 
     function create(uint256 senderSeed, uint256 beneficiarySeed, uint256 tokenSeed, uint256 amount) external {
@@ -56,6 +68,18 @@ contract EscrowHandler is Test {
         token.approve(address(escrow), amount);
         vm.prank(sender);
         escrow.createEscrow(address(token), beneficiary, amount);
+    }
+
+    /// @dev Like `create`, but the sender approves with a signed permit and the escrow is made by
+    /// `createEscrowWithPermit`, always with the permit token.
+    function createWithPermit(uint256 senderSeed, uint256 beneficiarySeed, uint256 amount) external {
+        uint256 senderIndex = senderSeed % _actors.length;
+        address beneficiary = _actors[(senderIndex + 1 + (beneficiarySeed % (_actors.length - 1))) % _actors.length];
+        amount = bound(amount, 1, MAX_AMOUNT);
+
+        tokenP.mint(_actors[senderIndex], amount);
+        _createWithPermit(senderIndex, beneficiary, amount);
+        createdWithPermit++;
     }
 
     function cancel(uint256 idSeed, uint256 callerSeed) external {
@@ -80,6 +104,18 @@ contract EscrowHandler is Test {
         uint256 bucket = secs % 3;
         uint256 maxJump = bucket == 0 ? 1 hours : bucket == 1 ? 3 days : 8 days;
         vm.warp(block.timestamp + bound(secs, 0, maxJump));
+    }
+
+    /// @dev Signs a permit for `amount` as actor `index` and creates the escrow with it. Kept apart from
+    /// `createWithPermit` so neither function holds too many variables.
+    function _createWithPermit(uint256 index, address beneficiary, uint256 amount) private {
+        address sender = _actors[index];
+        uint256 deadline = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(_actorKeys[index], PermitDigest.digest(tokenP, sender, address(escrow), amount, deadline));
+
+        vm.prank(sender);
+        escrow.createEscrowWithPermit(address(tokenP), beneficiary, amount, deadline, v, r, s);
     }
 
     /// @dev Tries an action. Three times out of four the caller is the legitimate party and the target is a

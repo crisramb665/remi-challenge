@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -47,6 +48,8 @@ contract EscrowManager is ReentrancyGuard {
     error InvalidToken();
     /// @notice The contract received a different amount than requested.
     error UnsupportedToken();
+    /// @notice After the permit was attempted, the caller's allowance to this contract is below the amount.
+    error PermitFailed();
     /// @notice No escrow exists with this id.
     /// @param id Escrow id.
     error EscrowNotFound(uint256 id);
@@ -115,10 +118,55 @@ contract EscrowManager is ReentrancyGuard {
         nonReentrant
         returns (uint256 id)
     {
+        _checkCreate(token, beneficiary, amount);
+        id = _deposit(token, beneficiary, amount);
+    }
+
+    /// @notice Same as `createEscrow`, but the caller approves this contract with an EIP-2612 signature
+    /// instead of a separate `approve` transaction.
+    /// @dev The result of `permit` is ignored on purpose and the allowance is what counts: anyone can submit
+    /// the signature first, which makes the caller's own `permit` revert although the allowance is set, and a
+    /// token with a fallback function but no `permit` accepts the call and does nothing. If the allowance is
+    /// below `amount` afterwards the call reverts with `PermitFailed`. An allowance that already covers
+    /// `amount` is enough whatever the signature. The token checks the signature, the nonce and the deadline.
+    /// @param token ERC-20 token to lock. Should implement EIP-2612.
+    /// @param beneficiary Account that can confirm or reject.
+    /// @param amount Amount to lock. Must be received in full by this contract.
+    /// @param deadline Time until which the signature is valid.
+    /// @param v Recovery id of the caller's signature over a permit for `amount`.
+    /// @param r First half of the signature.
+    /// @param s Second half of the signature.
+    /// @return id Id of the new escrow.
+    function createEscrowWithPermit(
+        address token,
+        address beneficiary,
+        uint256 amount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant returns (uint256 id) {
+        _checkCreate(token, beneficiary, amount);
+        _permit(token, amount, deadline, v, r, s);
+        id = _deposit(token, beneficiary, amount);
+    }
+
+    /// @dev The checks both create functions run before the token is called, in this order.
+    function _checkCreate(address token, address beneficiary, uint256 amount) private view {
         if (amount == 0) revert ZeroAmount();
         if (beneficiary == address(0) || beneficiary == msg.sender) revert InvalidBeneficiary();
         if (token == address(0) || token.code.length == 0) revert InvalidToken();
+    }
 
+    /// @dev Attempts the permit for exactly `amount` and requires the allowance it should have created.
+    function _permit(address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) private {
+        try IERC20Permit(token).permit(msg.sender, address(this), amount, deadline, v, r, s) {} catch {}
+        if (IERC20(token).allowance(msg.sender, address(this)) < amount) revert PermitFailed();
+    }
+
+    /// @dev Pulls `amount` from the caller, checks that all of it arrived, and stores the escrow. Used by both
+    /// create functions, so the deposit logic exists once.
+    function _deposit(address token, address beneficiary, uint256 amount) private returns (uint256 id) {
         uint256 balanceBefore = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         if (IERC20(token).balanceOf(address(this)) - balanceBefore != amount) {

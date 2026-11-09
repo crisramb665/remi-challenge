@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End to end check of the whole stack (SPEC section 7): creates escrows on a local Anvil, runs
-# confirm, reject, cancel and expire, moves Anvil's time, and asserts what the API answers.
+# confirm, reject, cancel and expire, moves Anvil's time, and asserts what the API answers. Last, it
+# creates one more escrow with an EIP-2612 permit signed by Anvil, and confirms it.
 #
 # It needs a FRESH stack (new Anvil, empty database) with the contract already deployed, and it
 # stops at the first failed check with exit code 1. Needs forge, cast, jq and curl.
@@ -32,6 +33,7 @@ REJECT_AMOUNT=2000000
 CANCEL_AMOUNT=3000000
 EXPIRE_AMOUNT=4000000
 MINTED=10000000
+PERMIT_AMOUNT=5000000
 
 WEEK_AND_AN_HOUR=$((7 * 24 * 3600 + 3600)) # past the 7 day TTL
 
@@ -257,5 +259,79 @@ expect "invalid status is 400" "400" "$(http_code '/escrows?status=Frozen')"
 expect "Bob received the confirmed escrow" "$CONFIRM_AMOUNT" "$(balance_of "$BOB")"
 expect "Alice kept everything but the confirmed escrow" "$((MINTED - CONFIRM_AMOUNT))" "$(balance_of "$ALICE")"
 expect "the escrow contract holds nothing" "0" "$(balance_of "$ESCROW")"
+
+# ---------------------------------------------------------------------------------------------
+# Phase 5: an escrow created with a permit signature (EIP-2612), then confirmed
+# ---------------------------------------------------------------------------------------------
+
+echo "Phase 5: create an escrow with a permit signature"
+PERMIT_TOKEN=$(cd contracts && forge create test/mocks/MockPermitERC20.sol:MockPermitERC20 \
+  --rpc-url "$RPC_URL" --unlocked --from "$ALICE" --broadcast --json |
+  sed -n '/^{/,$p' | jq -er .deployedTo)
+send "$ALICE" "$PERMIT_TOKEN" 'mint(address,uint256)' "$ALICE" "$PERMIT_AMOUNT"
+expect "Alice has not approved the escrow contract" "0" \
+  "$(call "$PERMIT_TOKEN" 'allowance(address,address)(uint256)' "$ALICE" "$ESCROW")"
+
+# Alice signs the permit through Anvil, which holds the keys of its default accounts, so no key is
+# needed in this repository. The domain is the one of MockPermitERC20: name "Permit", version "1".
+deadline=$(($(cast block latest --rpc-url "$RPC_URL" --field timestamp) + 3600))
+typed=$(jq -nc --arg token "$PERMIT_TOKEN" --arg owner "$ALICE" --arg spender "$ESCROW" \
+  --arg value "$PERMIT_AMOUNT" --arg deadline "$deadline" \
+  --argjson chain "$(cast chain-id --rpc-url "$RPC_URL")" '{
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" }
+      ],
+      Permit: [
+        { name: "owner", type: "address" },
+        { name: "spender", type: "address" },
+        { name: "value", type: "uint256" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" }
+      ]
+    },
+    primaryType: "Permit",
+    domain: { name: "Permit", version: "1", chainId: $chain, verifyingContract: $token },
+    message: { owner: $owner, spender: $spender, value: $value, nonce: "0", deadline: $deadline }
+  }')
+signature=$(cast rpc --rpc-url "$RPC_URL" eth_signTypedData_v4 "$ALICE" "$typed" | jq -er .) ||
+  die "Anvil could not sign the permit (eth_signTypedData_v4)"
+[ "${#signature}" -eq 132 ] || die "unexpected signature from Anvil: $signature"
+permit_r=0x${signature:2:64}
+permit_s=0x${signature:66:64}
+permit_v=$((16#${signature:130:2}))
+[ "$permit_v" -ge 27 ] || permit_v=$((permit_v + 27)) # some signers return 0 or 1
+
+PERMIT_ID=$(call "$ESCROW" 'nextId()(uint256)')
+send "$ALICE" "$ESCROW" 'createEscrowWithPermit(address,address,uint256,uint256,uint8,bytes32,bytes32)' \
+  "$PERMIT_TOKEN" "$BOB" "$PERMIT_AMOUNT" "$deadline" "$permit_v" "$permit_r" "$permit_s"
+PERMIT_CREATED=$LAST_TX
+settle
+
+body=$(api_get "/escrows/$PERMIT_ID")
+expect "permit escrow sender" "$(lower "$ALICE")" "$(field "$body" .sender)"
+expect "permit escrow beneficiary" "$(lower "$BOB")" "$(field "$body" .beneficiary)"
+expect "permit escrow token" "$(lower "$PERMIT_TOKEN")" "$(field "$body" .token)"
+expect "permit escrow amount" "$PERMIT_AMOUNT" "$(field "$body" .amount)"
+expect "permit escrow status" "Pending" "$(field "$body" .status)"
+expect "permit escrow creation transaction" "$PERMIT_CREATED" "$(field "$body" .transactions.created)"
+expect "the permit's allowance was used up" "0" \
+  "$(call "$PERMIT_TOKEN" 'allowance(address,address)(uint256)' "$ALICE" "$ESCROW")"
+expect "the escrow contract holds the permit amount" "$PERMIT_AMOUNT" \
+  "$(call "$PERMIT_TOKEN" 'balanceOf(address)(uint256)' "$ESCROW")"
+expect "status=Pending lists only the permit escrow" "$PERMIT_ID" "$(ids_of "$(api_get '/escrows?status=Pending')")"
+
+send "$BOB" "$ESCROW" 'confirm(uint256)' "$PERMIT_ID"
+PERMIT_RESOLVED=$LAST_TX
+settle
+
+body=$(api_get "/escrows/$PERMIT_ID")
+expect "permit escrow is Released after the confirm" "Released" "$(field "$body" .status)"
+expect "permit escrow resolution transaction" "$PERMIT_RESOLVED" "$(field "$body" .transactions.resolved)"
+expect "Bob received the permit amount" "$PERMIT_AMOUNT" \
+  "$(call "$PERMIT_TOKEN" 'balanceOf(address)(uint256)' "$BOB")"
 
 echo "All checks passed"

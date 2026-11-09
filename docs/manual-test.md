@@ -46,12 +46,14 @@ Escrow ids are 1 to 4 on a fresh stack. Escrow 1 is confirmed, 2 rejected, 3 can
 | 16 | Balances | `balanceOf` on Bob, Alice and the escrow contract | Bob 1000000, Alice 9000000, contract 0 | §2.9 |
 | 17 | API restart | `docker compose restart api` | `lastIndexedBlock` unchanged and the same escrows, none duplicated (the checkpoint is in Postgres) | §3.2 |
 | 18 | Node down | `docker compose stop anvil` | `/health` answers 200 with `status: degraded` and nulls; `GET /escrows/1` answers 503. Anvil starts a new chain on `start`, so run `down -v` afterwards | §4.3 |
+| 19 | Create with a permit | with `MockPermitERC20`, sign the permit for Alice with Anvil (`eth_signTypedData_v4`), then call `createEscrowWithPermit` | the escrow shows in the API exactly like one made with `createEscrow`: `Pending`, its token is the permit token, `transactions.created` is that transaction, and Alice's allowance to the contract is 0 afterwards. Nothing in the indexer or the API is different | §2.3, §2.5 |
 
 ## Result
 
 Status on 2026-11-09:
 
 * Scenarios 1 and 2 were checked from the container states and logs during the session: `anvil`, `postgres` and `api` healthy, `deploy` exited with 0, and its log ending with `EscrowManager at 0x5fbdb2315678afecb367f032d93f642f64180aa3, deployed in block 1, written to /shared/deployment.json`.
+* Scenario 19 (permit creation) was added with task T-12. It is automated as Phase 5 of `e2e.sh`, which passed on 2026-11-09 against a fresh stack built with the new contract: 13 checks, ending in `All checks passed`. The contract side is covered by `contracts/test/CreateEscrowWithPermit.t.sol` and the invariant tests.
 * Scenarios 3 to 18: the developer reported running them with curl and Postman against this stack. No outputs were kept, so this document records the expected results and does not claim a result per scenario. Any deviation found should be written here.
 * `e2e.sh` was run on 2026-11-09 against a fresh stack (`docker compose down -v`, then `docker compose up -d --build --wait`, then `bash e2e.sh`). Every check printed `ok` and it ended with `All checks passed`. It automates scenarios 1 to 16 apart from the API restart and node-down checks (17 and 18), which remain manual.
 

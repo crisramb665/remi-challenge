@@ -198,7 +198,7 @@ Acceptance:
 
 ### T-12 Permit creation (EIP-2612)
 
-Spec: §2.3, §2.4, §2.5, §2.6, §2.9, §2.10 · Depends on: T-10 · Status: [ ]
+Spec: §2.3, §2.4, §2.5, §2.6, §2.9, §2.10 · Depends on: T-10 · Status: [x]
 
 Scope: an optional feature chosen by the developer on 2026-11-09 and added to the spec. `createEscrowWithPermit` creates an escrow with an EIP-2612 signature instead of a separate `approve` transaction. Only the contract changes; the indexer, the schema and the API stay as they are because the event is the same.
 
@@ -214,7 +214,7 @@ Acceptance:
 * The invariant handler creates escrows with both functions, its counters show the permit path is reached, and I1 to I3 hold.
 * `forge fmt --check` and `forge test` pass. Slither is re-run; any new finding is triaged in `docs/slither.md`, and if it is accepted its detector is added to `--exclude` in `.github/workflows/ci.yml` in the same change.
 * Documentation: the README moves Permit from future work to the feature list and design decisions, `docs/ARCHITECTURE.md` shows the second create path if T-11 is done, `docs/manual-test.md` gets a permit scenario, and `docs/ai/log.md` gets the entry.
-* Optional: an `e2e.sh` scenario that creates an escrow with a permit signature obtained from Anvil (`eth_signTypedData_v4` for a default account), so no key is added to the repository. If that is not possible without a key, the permit path stays covered by the Foundry tests only and the log says so.
+* Optional: an `e2e.sh` scenario that creates an escrow with a permit signature obtained from Anvil (`eth_signTypedData_v4` for a default account), so no key is added to the repository. If that is not possible without a key, the permit path stays covered by the Foundry tests only and the log says so. Built afterwards as Phase 5 of `e2e.sh`, after every existing check: it deploys `MockPermitERC20`, has Anvil sign the permit with `eth_signTypedData_v4`, calls `createEscrowWithPermit`, checks the chain and the API, and confirms the escrow. Confirmed on 2026-11-09: it ran against a fresh stack built with the new contract and every check passed (see `docs/ai/log.md`).
 
 ---
 

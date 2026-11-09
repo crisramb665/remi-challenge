@@ -361,3 +361,50 @@ Decisions to review:
 * The document describes the code as of today. It says Permit creation is specified and planned as T-12 and is not implemented; T-12 has to update the component, lifecycle and "left out" parts.
 * Paths and names will drift if files move. The check script is not part of the repository; the T-11 acceptance asks only for the check at the time of writing.
 * The guarantees table cites tests by name, so renaming one of the three quoted tests breaks the reference.
+
+## 2026-11-09: T-12 Permit creation (EIP-2612)
+
+Request: implement `createEscrowWithPermit` as specified in SPEC §2.3 to §2.6, §2.9 and §2.10 (added earlier today at the developer's request), one stage at a time with the developer running the commands.
+
+Summary:
+
+* `contracts/src/EscrowManager.sol`: new `createEscrowWithPermit(token, beneficiary, amount, deadline, v, r, s)` and error `PermitFailed()`, with NatSpec. `createEscrow` is now a thin wrapper, and its behavior is unchanged. Both functions are `nonReentrant` and share three private functions: `_checkCreate` (the zero amount, invalid beneficiary and invalid token checks, before the token is called), `_permit` (the permit attempt inside `try/catch`, then a check that the allowance is at least `amount`, otherwise `PermitFailed`) and `_deposit` (the old body: balance before and after, `UnsupportedToken`, store, event). `IERC20Permit` comes from OpenZeppelin as installed. The event is unchanged.
+* Test support in `contracts/test/`: `mocks/MockPermitERC20.sol` (OpenZeppelin `ERC20Permit`), `mocks/MockFallbackERC20.sol` (no `permit`, a fallback that accepts any call, like WETH9) and `utils/PermitDigest.sol` (the EIP-712 digest to sign with `vm.sign`).
+* `contracts/test/CreateEscrowWithPermit.t.sol`, 24 tests: valid signature (funds, nonce used, no allowance left), the event, a deadline equal to now, the same escrow as `createEscrow`, the beneficiary confirming it, a fuzz test on the exact amount; expired deadline, wrong signer, signature for another amount, replayed signature, and a signature submitted first by a third party (still succeeds); a token without `permit`, the fallback token, an existing allowance with a garbage signature, an allowance one short, a plain token with an allowance, and a fee-on-transfer token (still `UnsupportedToken`); the validation order; reentrancy from both create functions.
+* Invariants: `EscrowHandler` now keeps its actors' keys, has a third token (the permit one), a `createWithPermit` action and a `createdWithPermit` counter; `EscrowInvariants` registers the action and I1 also checks the permit token; `EscrowHandler.t.sol` has a coverage test that creates an escrow with a permit and resolves it. In the invariant run, `createWithPermit` has about 900 calls and 0 reverts for each of I1, I2 and I3.
+* Slither found one new result, `reentrancy-benign` in `createEscrowWithPermit` (state written after the external call to `permit`). It was triaged as accepted in `docs/slither.md` (finding 6, with the reasons) and its detector was added to `--exclude` in `.github/workflows/ci.yml`, following the rule written in that document.
+* Documentation: README (design decision, known limitation, Permit removed from future work), `docs/ARCHITECTURE.md` (state diagram, components table, a guarantees row, Permit removed from "left out"), `docs/manual-test.md` (scenario 19 and a result note). Nothing in `api/` changed.
+
+Verification: `make fmt-check` clean; `make build` clean (63 files, no warnings, no "stack too deep"); `make test` 99 passed, 0 failed (the 74 earlier tests unchanged, 24 new, 1 new handler coverage test); Slither with the CI command: `99 detectors, 8 contracts, 0 result(s)`, exit code 0; `pnpm --dir api test -- src/indexer/decode.spec.ts` 10 passed. The API, the indexer and the Docker stack were not re-run: nothing there changed, and `e2e.sh` was not run against the new contract.
+
+Decisions to review:
+
+* A first compile attempt failed because I named a helper `of`, a reserved word in Solidity; it was renamed to `digest` before anything else ran.
+* `PermitFailed()` is a new error for a failed permit, chosen over letting the token's own allowance error surface, which varies by token. The permit approves exactly `amount`, and an allowance that already covers `amount` is accepted whatever the signature.
+* Adding `reentrancy-benign` to the CI exclusion widens the blind spot in the contract's main risk area (a new token call before a state write): the other three reentrancy detectors stay active and every state changing function is `nonReentrant`, but a new benign late write would not fail CI. A `slither-disable-start/end` pair around the one function is the narrower option, described in `docs/slither.md`.
+* The optional `e2e.sh` scenario was not built: it needs Anvil to sign typed data for a default account (`eth_signTypedData_v4`), which could not be tried here. The permit path is covered by the Foundry tests and the invariants only, and scenario 19 in `docs/manual-test.md` says it has not been run.
+* The contract changed, so the deployed code of `docker compose` differs from the last `e2e.sh` run (which passed before T-12). The script uses only `createEscrow` and the unchanged event, but it has not been re-run against the new build.
+* `make test-deep` was not re-run with the new action.
+
+## 2026-11-09: e2e.sh permit scenario (optional item of T-12)
+
+Request: add the optional end to end scenario for permit creation that was left out when T-12 was closed.
+
+Summary: `e2e.sh` has a new Phase 5 after every existing check, so a failure there cannot hide another one, and a new constant `PERMIT_AMOUNT`. It deploys `MockPermitERC20` with `forge create`, mints to Alice, checks that Alice has not approved the escrow contract, and has Anvil sign the permit with `eth_signTypedData_v4` for her default account, so no key is added to the repository (the domain is that of the mock: name `Permit`, version `1`, the chain id and the token address). The 65 byte signature is split into `r`, `s` and `v` (adding 27 when the signer returns 0 or 1). Then it calls `createEscrowWithPermit` as Alice, waits for the indexer, and checks the API (sender, beneficiary, token, amount, `Pending`, the creation transaction), the chain (the allowance is used up and the escrow contract holds the amount) and `status=Pending` listing only the new escrow. Bob then confirms it and the script checks `Released`, the resolution transaction and Bob's balance. The header comment, the README sentence about the script, the T-12 task and `docs/manual-test.md` mention it.
+
+Verification, offline only: `bash -n e2e.sh` passes, the typed-data JSON the script builds was printed with dummy values and is well formed, and the signature slicing was checked on a sample value. The phase has NOT been run: it needs the Docker stack, and Anvil's answer to `eth_signTypedData_v4` could not be tried.
+
+Decisions to review:
+
+* If Anvil rejects the call or returns an unexpected shape, the script stops with `Anvil could not sign the permit` or `unexpected signature from Anvil`. The likely causes are how `cast rpc` passes the JSON object, or a different parameter format in this Anvil version. If it cannot be fixed without a key, the phase should be removed and the log should say the permit path is covered by the Foundry tests and the invariants only.
+* The phase adds a fifth escrow, so it comes after the pagination and balance checks, which assume four. Adding checks before it would change those expectations.
+* The script now deploys a second token from `contracts/test/mocks`, so it depends on that file existing on the host, as it already does for `MockERC20`.
+* The earlier green run of `e2e.sh` (before T-12) did not include this phase or the new contract; a fresh run is needed to confirm both.
+
+## 2026-11-09: e2e.sh permit scenario confirmed
+
+Request: run the stack and `e2e.sh` with the new contract and the new Phase 5.
+
+Result: `docker compose down -v && docker compose up -d --build --wait && bash e2e.sh` on a fresh stack. The `deploy` image was rebuilt without cache for its last layers (the copy of `contracts/` and `RUN forge build` ran), so the contract in the stack is the one with `createEscrowWithPermit`. The `api` image rebuilt its source layers and passed its healthcheck. Every check printed `ok`, including the 13 of Phase 5 (Alice has not approved the contract, the sender, beneficiary, token, amount, status and creation transaction of the permit escrow, the allowance used up, the contract holding the permit amount, `status=Pending` listing only that escrow, `Released` after Bob's confirm, its resolution transaction and Bob's balance), and the script ended with `All checks passed`. Anvil signed the permit with `eth_signTypedData_v4` for a default account, so no key was needed in the repository. This closes the open points of the previous entry: the optional T-12 scenario works, and a fresh run of the script against the new contract passed.
+
+Still not run: `make test-deep` with the new `createWithPermit` action, the CI workflow on GitHub, and the API restart and node-down scenarios (17 and 18 of `docs/manual-test.md`) against the new build.

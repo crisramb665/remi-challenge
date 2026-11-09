@@ -35,7 +35,7 @@ flowchart LR
 
 | Component | What it does | Code |
 | --- | --- | --- |
-| Contract | Holds the escrows and enforces every rule. No owner, no upgrade, no rescue | `contracts/src/EscrowManager.sol` |
+| Contract | Holds the escrows and enforces every rule. Two ways to create an escrow (`createEscrow`, and `createEscrowWithPermit` with an EIP-2612 signature) that emit the same event. No owner, no upgrade, no rescue | `contracts/src/EscrowManager.sol` |
 | `deploy` | Deploys the contract, converts the hex deploy block to decimal, writes `{ "address", "startBlock" }` through a temporary file and a rename | `contracts/deploy.sh`, `contracts/script/Deploy.s.sol`, `contracts/Dockerfile` |
 | Indexer | Reads confirmed logs and projects them. Starts with the app and stops before the database pool closes | `api/src/indexer/` |
 | HTTP API | Reads the projection and the node's clock. Read only | `api/src/escrows/`, `api/src/health/` |
@@ -48,7 +48,7 @@ Both the indexer and the health check use the deployment file: the indexer for t
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Pending: createEscrow
+  [*] --> Pending: createEscrow or createEscrowWithPermit
   Pending --> Released: confirm by the beneficiary, before E
   Pending --> Rejected: reject by the beneficiary, before E
   Pending --> CancelledBySender: cancel by the sender, before D
@@ -188,6 +188,7 @@ sequenceDiagram
 | Locked amount equals the event amount | Balance before and after the deposit, otherwise `UnsupportedToken` | `contracts/src/EscrowManager.sol` | `contracts/test/CreateEscrow.t.sol` |
 | A resolved escrow never changes | Status is written before any outbound transfer, guarded by `ReentrancyGuard` | `contracts/src/EscrowManager.sol` | `contracts/test/ResolvedEscrowFinality.t.sol`, invariants I1 to I3 in `contracts/test/invariant/` |
 | Tokens sent directly to the contract are not attributed | Escrow amounts are stored, never read from the balance | `contracts/src/EscrowManager.sol` | `contracts/test/DirectTokenTransfer.t.sol` |
+| A permit cannot create an escrow without a real allowance | The result of `permit` is ignored and the allowance is required, so a signature submitted first by someone else still works and a token with a fallback function but no `permit` does not | `_permit` in `contracts/src/EscrowManager.sol` | `contracts/test/CreateEscrowWithPermit.t.sol`, and the invariants, which also create escrows with a permit |
 
 ### Time
 
@@ -204,7 +205,6 @@ Nest builds the modules in this order: configuration (`.env` through `@nestjs/co
 * **Caching.** Every escrow request makes one RPC call for the latest block.
 * **Several indexers on one database.** Replays are harmless, so it would work, but the work would be done twice.
 * **Admin functions and unusual tokens.** No owner, pause, upgrade or rescue function. Fee-on-transfer and rebasing tokens are not supported. Tokens with blacklists can lock refunds (SPEC §2.5).
-* **Permit creation.** Specified in SPEC §2.3 and planned as T-12 in [TASKS.md](TASKS.md), not implemented yet. It will add a second entry point to the contract that emits the same event, so the indexer and the API will not change.
 * **Docker stack and `e2e.sh` in CI.** They run by hand. CI runs the contract tests, Slither, and the API lint, build and tests.
 
 ## 8. Where to look

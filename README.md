@@ -35,7 +35,7 @@ docker compose up -d --build --wait
 
 This starts Anvil on port 8545, Postgres, a one-shot `deploy` job that deploys the contract and writes its address and deploy block to a shared volume, and the API on port 3000. Everything is in memory, so every start is a new chain and a new database. Stop and clean up with `docker compose down -v`.
 
-Run the end to end script against a **fresh** stack. It creates four escrows and runs confirm, reject, cancel and expire, moving Anvil's clock, and checks what the API answers. It stops with exit code 1 at the first failed check:
+Run the end to end script against a **fresh** stack. It creates four escrows and runs confirm, reject, cancel and expire, moving Anvil's clock, then creates one more with a permit signed by Anvil, and checks what the API answers. It stops with exit code 1 at the first failed check:
 
 ```
 docker compose down -v && docker compose up -d --build --wait && bash e2e.sh
@@ -126,6 +126,7 @@ Each one has its rationale in the spec; the section is in brackets.
 
 * **Time rules.** "Before" is strict and "from" is inclusive, so at exactly the expiry only `reclaimExpired` succeeds, with no gap and no overlap with the beneficiary's window (§2.3). The 2 hour cancel window and the 7 day TTL are constants, not configuration (§2.1).
 * **Exact amounts.** Deposits compare the balance before and after the transfer and revert with `UnsupportedToken` on a mismatch, so fee-on-transfer tokens are rejected and the locked amount always equals the event amount (§2.5). `SafeERC20` handles tokens that return no `bool`.
+* **Permit creation.** `createEscrowWithPermit` creates an escrow from an EIP-2612 signature, so the sender needs one transaction instead of `approve` plus `createEscrow`. It emits the same event, so the indexer and the API are unchanged. The contract trusts the resulting **allowance**, not the result of `permit`: anyone can submit the signature first, and a token with a fallback function but no `permit` (WETH9) accepts the call and does nothing. If the allowance is below the amount it reverts with `PermitFailed` (§2.5).
 * **No admin.** No owner, pause, upgrade or rescue function. Only the sender and the beneficiary can move an escrow's funds, so tokens sent directly to the contract stay locked (§2.6).
 * **OpenZeppelin as installed.** `SafeERC20` and `ReentrancyGuard` from a pinned, audited release; security primitives are never reimplemented (§2.6). State is written before any outbound transfer.
 * **Polling, not subscriptions.** The indexer reads `getLogs` in ranges up to the safe head (head minus `CONFIRMATIONS`) and keeps a checkpoint, so it survives restarts and dropped connections (§3.1).
@@ -147,6 +148,7 @@ Each one has its rationale in the spec; the section is in brackets.
 * A reorg deeper than `CONFIRMATIONS` would leave the database wrong. Stored data is treated as final (§3.3).
 * The API can show `Pending` for an escrow already resolved onchain in the last blocks. `/health` shows the lag (§4.4).
 * Tokens with blacklists (USDC, USDT): if the sender is blacklisted, refund paths revert until it is unblocked (§2.5).
+* `createEscrowWithPermit` only works with tokens that implement EIP-2612 (not USDT, and not DAI, whose permit has a different signature). For any other token, approve and call `createEscrow`.
 * Block timestamps can shift by seconds, so near a deadline the API may say `canCancel: true` for a transaction that would then revert (§4.1).
 * A failed indexing round is retried after `POLL_INTERVAL_MS` with no backoff and no retry limit. A `BATCH_SIZE` above what the node allows per `getLogs` makes every round fail.
 * `GET /escrows` and `GET /escrows/:id` make one RPC call each, for the latest block, and answer `503` when the node is unreachable.
@@ -155,7 +157,6 @@ Each one has its rationale in the spec; the section is in brackets.
 
 ## Future work
 
-* Permit (EIP-2612) creation.
 * Webhooks on state changes.
 * Fee-on-transfer support, recording the received amount.
 * Reorg rollback with block hash tracking and a raw event log (§3.3).

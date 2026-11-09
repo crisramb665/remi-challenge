@@ -4,36 +4,42 @@ pragma solidity 0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {EscrowManager} from "../../src/EscrowManager.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {MockPermitERC20} from "../mocks/MockPermitERC20.sol";
 import {EscrowHandler} from "./EscrowHandler.sol";
 
-/// @dev Invariants I1 to I3 of SPEC §2.9, checked after random sequences of handler calls.
+/// @dev Invariants I1 to I3 of SPEC §2.9, checked after random sequences of handler calls. Escrows are created
+/// with both create functions, the permit one always with `tokenP`.
 contract EscrowInvariantsTest is Test {
     EscrowManager internal escrow;
     MockERC20 internal tokenA;
     MockERC20 internal tokenB;
+    MockPermitERC20 internal tokenP;
     EscrowHandler internal handler;
 
     function setUp() public {
         escrow = new EscrowManager();
         tokenA = new MockERC20();
         tokenB = new MockERC20();
-        handler = new EscrowHandler(escrow, tokenA, tokenB);
+        tokenP = new MockPermitERC20();
+        handler = new EscrowHandler(escrow, tokenA, tokenB, tokenP);
 
-        bytes4[] memory selectors = new bytes4[](6);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = handler.create.selector;
         selectors[1] = handler.cancel.selector;
         selectors[2] = handler.confirm.selector;
         selectors[3] = handler.reject.selector;
         selectors[4] = handler.reclaim.selector;
         selectors[5] = handler.warp.selector;
+        selectors[6] = handler.createWithPermit.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }
 
     /// @dev I1: per token, the contract balance equals the sum of the `Pending` amounts.
     function invariant_I1_BalanceEqualsPendingAmounts() public view {
-        _assertBalanceMatchesPending(tokenA);
-        _assertBalanceMatchesPending(tokenB);
+        _assertBalanceMatchesPending(address(tokenA));
+        _assertBalanceMatchesPending(address(tokenB));
+        _assertBalanceMatchesPending(address(tokenP));
     }
 
     /// @dev I2: an escrow outside `Pending` never changes status.
@@ -68,13 +74,13 @@ contract EscrowInvariantsTest is Test {
         }
     }
 
-    function _assertBalanceMatchesPending(MockERC20 token) internal view {
+    function _assertBalanceMatchesPending(address token) internal view {
         uint256 pendingSum;
         uint256 count = escrow.nextId() - 1;
         for (uint256 id = 1; id <= count; id++) {
             (EscrowManager.Escrow memory e,,) = escrow.getEscrow(id);
-            if (e.status == EscrowManager.Status.Pending && e.token == address(token)) pendingSum += e.amount;
+            if (e.status == EscrowManager.Status.Pending && e.token == token) pendingSum += e.amount;
         }
-        assertEq(token.balanceOf(address(escrow)), pendingSum);
+        assertEq(MockERC20(token).balanceOf(address(escrow)), pendingSum);
     }
 }
